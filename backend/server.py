@@ -1,89 +1,767 @@
-from fastapi import FastAPI, APIRouter
+"""ART JUNKIE OS - FastAPI backend."""
 from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-import uuid
-from datetime import datetime, timezone
-
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+import os
+import logging
+import random
+import string
+from datetime import datetime, timezone, timedelta
+from typing import Optional, List
 
-# Create the main app without a prefix
-app = FastAPI()
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Response, Request
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import BaseModel
 
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
+from models import (
+    UserCreate, UserUpdate, User,
+    CustomerBase, Customer,
+    LeadBase, Lead,
+    MeasurementBase, Measurement,
+    InstallationBase, Installation,
+    WorkOrderBase, WorkOrder,
+    ProductionItemBase, ProductionItem,
+    WarrantyBase, Warranty,
+    ServiceTicketBase, ServiceTicket,
+    NotificationBase, Notification,
+    Settings, OtpCode, MessageBase, Message, now_iso, new_id, ROLES,
+)
+from auth import (
+    hash_password, verify_password,
+    create_access_token, create_refresh_token, create_client_token,
+    set_auth_cookies, clear_auth_cookies, set_client_cookie,
+    get_current_user, require_roles, get_current_client,
+)
+from notifications import (
+    send_whatsapp_message, send_push_notification, send_email_notification,
+    create_internal_notification, render_template,
+)
+from seed import seed_all
 
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+# ============ DB ============
+mongo_url = os.environ["MONGO_URL"]
+mongo_client = AsyncIOMotorClient(mongo_url)
+db = mongo_client[os.environ["DB_NAME"]]
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+app = FastAPI(title="ART JUNKIE OS API")
+api = APIRouter(prefix="/api")
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
-
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
-
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
-
-# Include the router in the main app
-app.include_router(api_router)
-
+# CORS - allow the frontend url and localhost
+allow_origins = os.environ.get("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=allow_origins if allow_origins != ["*"] else ["*"],
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+
+def strip_id(doc):
+    if doc is None:
+        return None
+    doc.pop("_id", None)
+    doc.pop("password_hash", None)
+    return doc
+
+
+def strip_list(docs):
+    return [strip_id(d) for d in docs]
+
+
+# ============ AUTH ============
+class LoginBody(BaseModel):
+    email: str
+    password: str
+
+
+@api.post("/auth/login")
+async def login(body: LoginBody, response: Response):
+    email = body.email.strip().lower()
+    user = await db.users.find_one({"email": email})
+    if not user:
+        raise HTTPException(status_code=401, detail="Email sau parolă incorectă")
+    if not user.get("active", True):
+        raise HTTPException(status_code=403, detail="Cont dezactivat")
+    if not verify_password(body.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Email sau parolă incorectă")
+    access = create_access_token(user["id"], user["email"], user["role"])
+    refresh = create_refresh_token(user["id"])
+    set_auth_cookies(response, access, refresh)
+    return strip_id(user)
+
+
+@api.post("/auth/logout")
+async def logout(response: Response):
+    clear_auth_cookies(response)
+    return {"ok": True}
+
+
+@api.get("/auth/me")
+async def me(user: dict = Depends(get_current_user)):
+    return user
+
+
+# ============ USERS / EMPLOYEES ============
+@api.get("/users")
+async def list_users(user: dict = Depends(get_current_user)):
+    docs = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api.post("/users")
+async def create_user(body: UserCreate, user: dict = Depends(require_roles("admin"))):
+    email = body.email.strip().lower()
+    if body.role not in ROLES:
+        raise HTTPException(status_code=400, detail="Rol invalid")
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Emailul există deja")
+    new_user = User(email=email, name=body.name, phone=body.phone or "", role=body.role, active=body.active)
+    doc = new_user.model_dump()
+    doc["password_hash"] = hash_password(body.password)
+    await db.users.insert_one(doc)
+    return strip_id(doc)
+
+
+@api.patch("/users/{user_id}")
+async def update_user(user_id: str, body: UserUpdate, user: dict = Depends(require_roles("admin"))):
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "password" in updates:
+        updates["password_hash"] = hash_password(updates.pop("password"))
+    if "email" in updates:
+        updates["email"] = updates["email"].strip().lower()
+    if updates:
+        await db.users.update_one({"id": user_id}, {"$set": updates})
+    doc = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Utilizator inexistent")
+    return doc
+
+
+@api.delete("/users/{user_id}")
+async def delete_user(user_id: str, user: dict = Depends(require_roles("admin"))):
+    await db.users.delete_one({"id": user_id})
+    return {"ok": True}
+
+
+# ============ CUSTOMERS ============
+@api.get("/customers")
+async def list_customers(q: Optional[str] = None, status: Optional[str] = None,
+                         user: dict = Depends(get_current_user)):
+    query = {}
+    if q:
+        query["$or"] = [
+            {"name": {"$regex": q, "$options": "i"}},
+            {"phone": {"$regex": q, "$options": "i"}},
+            {"email": {"$regex": q, "$options": "i"}},
+            {"city": {"$regex": q, "$options": "i"}},
+        ]
+    if status:
+        query["status"] = status
+    docs = await db.customers.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+
+
+@api.get("/customers/{customer_id}")
+async def get_customer(customer_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.customers.find_one({"id": customer_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Client inexistent")
+    # Aggregate history
+    leads = await db.leads.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
+    measurements = await db.measurements.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
+    installations = await db.installations.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
+    work_orders = await db.work_orders.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
+    warranties = await db.warranties.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
+    tickets = await db.service_tickets.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
+    return {
+        "customer": doc, "leads": leads, "measurements": measurements,
+        "installations": installations, "work_orders": work_orders,
+        "warranties": warranties, "service_tickets": tickets,
+    }
+
+
+@api.post("/customers")
+async def create_customer(body: CustomerBase, user: dict = Depends(get_current_user)):
+    c = Customer(**body.model_dump())
+    await db.customers.insert_one(c.model_dump())
+    return c.model_dump()
+
+
+@api.patch("/customers/{customer_id}")
+async def update_customer(customer_id: str, body: dict, user: dict = Depends(get_current_user)):
+    body.pop("id", None)
+    body["updated_at"] = now_iso()
+    await db.customers.update_one({"id": customer_id}, {"$set": body})
+    doc = await db.customers.find_one({"id": customer_id}, {"_id": 0})
+    return doc
+
+
+@api.delete("/customers/{customer_id}")
+async def delete_customer(customer_id: str, user: dict = Depends(require_roles("admin"))):
+    await db.customers.delete_one({"id": customer_id})
+    return {"ok": True}
+
+
+# ============ LEADS ============
+@api.get("/leads")
+async def list_leads(status: Optional[str] = None, user: dict = Depends(get_current_user)):
+    query = {}
+    if status:
+        query["status"] = status
+    docs = await db.leads.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api.post("/leads")
+async def create_lead(body: LeadBase, user: dict = Depends(get_current_user)):
+    lead = Lead(**body.model_dump())
+    await db.leads.insert_one(lead.model_dump())
+    return lead.model_dump()
+
+
+@api.patch("/leads/{lead_id}")
+async def update_lead(lead_id: str, body: dict, user: dict = Depends(get_current_user)):
+    body.pop("id", None)
+    body["updated_at"] = now_iso()
+    await db.leads.update_one({"id": lead_id}, {"$set": body})
+    return await db.leads.find_one({"id": lead_id}, {"_id": 0})
+
+
+@api.delete("/leads/{lead_id}")
+async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
+    await db.leads.delete_one({"id": lead_id})
+    return {"ok": True}
+
+
+# ============ MEASUREMENTS ============
+@api.get("/measurements")
+async def list_measurements(assigned_to: Optional[str] = None, status: Optional[str] = None,
+                            mine: Optional[bool] = False, user: dict = Depends(get_current_user)):
+    query = {}
+    if mine:
+        query["assigned_to"] = user["id"]
+    elif assigned_to:
+        query["assigned_to"] = assigned_to
+    if status:
+        query["status"] = status
+    docs = await db.measurements.find(query, {"_id": 0}).sort("date", 1).to_list(500)
+    return docs
+
+
+@api.post("/measurements")
+async def create_measurement(body: MeasurementBase, user: dict = Depends(get_current_user)):
+    m = Measurement(**body.model_dump())
+    await db.measurements.insert_one(m.model_dump())
+    # Notify assigned employee if any
+    if m.assigned_to:
+        customer = await db.customers.find_one({"id": m.customer_id}, {"_id": 0})
+        cust_name = customer.get("name", "") if customer else ""
+        await create_internal_notification(
+            db, user_id=m.assigned_to, customer_id=m.customer_id, kind="allocation",
+            title="Măsurătoare alocată",
+            body=f"Client: {cust_name}, {m.date} {m.time}",
+        )
+    return m.model_dump()
+
+
+@api.patch("/measurements/{mid}")
+async def update_measurement(mid: str, body: dict, user: dict = Depends(get_current_user)):
+    body.pop("id", None)
+    body["updated_at"] = now_iso()
+    prev = await db.measurements.find_one({"id": mid}, {"_id": 0})
+    await db.measurements.update_one({"id": mid}, {"$set": body})
+    doc = await db.measurements.find_one({"id": mid}, {"_id": 0})
+    # notify on allocation change
+    if prev and body.get("assigned_to") and prev.get("assigned_to") != body["assigned_to"]:
+        await create_internal_notification(
+            db, user_id=body["assigned_to"], customer_id=doc["customer_id"],
+            kind="allocation", title="Măsurătoare alocată",
+            body=f"{doc.get('date','')} {doc.get('time','')}",
+        )
+    return doc
+
+
+@api.delete("/measurements/{mid}")
+async def delete_measurement(mid: str, user: dict = Depends(get_current_user)):
+    await db.measurements.delete_one({"id": mid})
+    return {"ok": True}
+
+
+# ============ INSTALLATIONS ============
+@api.get("/installations")
+async def list_installations(assigned_to: Optional[str] = None, status: Optional[str] = None,
+                             mine: Optional[bool] = False, user: dict = Depends(get_current_user)):
+    query = {}
+    if mine:
+        query["assigned_to"] = user["id"]
+    elif assigned_to:
+        query["assigned_to"] = assigned_to
+    if status:
+        query["status"] = status
+    docs = await db.installations.find(query, {"_id": 0}).sort("date", 1).to_list(500)
+    return docs
+
+
+@api.post("/installations")
+async def create_installation(body: InstallationBase, user: dict = Depends(get_current_user)):
+    inst = Installation(**body.model_dump())
+    await db.installations.insert_one(inst.model_dump())
+    if inst.assigned_to:
+        customer = await db.customers.find_one({"id": inst.customer_id}, {"_id": 0})
+        await create_internal_notification(
+            db, user_id=inst.assigned_to, customer_id=inst.customer_id, kind="allocation",
+            title="Montaj alocat",
+            body=f"Client: {customer.get('name','') if customer else ''}, {inst.date} {inst.time}",
+        )
+    return inst.model_dump()
+
+
+@api.patch("/installations/{iid}")
+async def update_installation(iid: str, body: dict, user: dict = Depends(get_current_user)):
+    body.pop("id", None)
+    body["updated_at"] = now_iso()
+    await db.installations.update_one({"id": iid}, {"$set": body})
+    doc = await db.installations.find_one({"id": iid}, {"_id": 0})
+    # Auto-activate warranty when finalized
+    if body.get("status") == "finalizat" and body.get("warranty_activated"):
+        # Warranty may already exist
+        existing_w = await db.warranties.find_one({"installation_id": iid})
+        if not existing_w:
+            settings = await db.settings.find_one({"id": "singleton"}) or {}
+            months = settings.get("default_warranty_months", 24)
+            today = datetime.now(timezone.utc).date()
+            w = Warranty(
+                customer_id=doc["customer_id"], work_order_id=doc.get("work_order_id", ""),
+                installation_id=iid, product=", ".join(doc.get("products", [])),
+                installation_date=today.isoformat(),
+                duration_months=months,
+                expiry_date=(today + timedelta(days=30 * months)).isoformat(),
+                status="activa",
+            )
+            await db.warranties.insert_one(w.model_dump())
+    return doc
+
+
+@api.delete("/installations/{iid}")
+async def delete_installation(iid: str, user: dict = Depends(get_current_user)):
+    await db.installations.delete_one({"id": iid})
+    return {"ok": True}
+
+
+# ============ WORK ORDERS ============
+@api.get("/work-orders")
+async def list_work_orders(status: Optional[str] = None, user: dict = Depends(get_current_user)):
+    query = {}
+    if status:
+        query["status"] = status
+    docs = await db.work_orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api.post("/work-orders")
+async def create_wo(body: WorkOrderBase, user: dict = Depends(get_current_user)):
+    wo = WorkOrder(**body.model_dump())
+    await db.work_orders.insert_one(wo.model_dump())
+    return wo.model_dump()
+
+
+@api.patch("/work-orders/{wid}")
+async def update_wo(wid: str, body: dict, user: dict = Depends(get_current_user)):
+    body.pop("id", None)
+    body["updated_at"] = now_iso()
+    await db.work_orders.update_one({"id": wid}, {"$set": body})
+    return await db.work_orders.find_one({"id": wid}, {"_id": 0})
+
+
+@api.delete("/work-orders/{wid}")
+async def delete_wo(wid: str, user: dict = Depends(get_current_user)):
+    await db.work_orders.delete_one({"id": wid})
+    return {"ok": True}
+
+
+# ============ PRODUCTION ============
+@api.get("/production")
+async def list_production(status: Optional[str] = None, user: dict = Depends(get_current_user)):
+    query = {}
+    if status:
+        query["status"] = status
+    docs = await db.production.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api.post("/production")
+async def create_production(body: ProductionItemBase, user: dict = Depends(get_current_user)):
+    p = ProductionItem(**body.model_dump())
+    await db.production.insert_one(p.model_dump())
+    return p.model_dump()
+
+
+@api.patch("/production/{pid}")
+async def update_production(pid: str, body: dict, user: dict = Depends(get_current_user)):
+    body.pop("id", None)
+    body["updated_at"] = now_iso()
+    await db.production.update_one({"id": pid}, {"$set": body})
+    return await db.production.find_one({"id": pid}, {"_id": 0})
+
+
+@api.delete("/production/{pid}")
+async def delete_production(pid: str, user: dict = Depends(get_current_user)):
+    await db.production.delete_one({"id": pid})
+    return {"ok": True}
+
+
+# ============ WARRANTIES ============
+@api.get("/warranties")
+async def list_warranties(status: Optional[str] = None, user: dict = Depends(get_current_user)):
+    query = {}
+    if status:
+        query["status"] = status
+    docs = await db.warranties.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api.post("/warranties")
+async def create_warranty(body: WarrantyBase, user: dict = Depends(get_current_user)):
+    payload = body.model_dump()
+    if not payload.get("expiry_date") and payload.get("installation_date"):
+        try:
+            base_date = datetime.fromisoformat(payload["installation_date"]).date()
+            payload["expiry_date"] = (base_date + timedelta(days=30 * payload.get("duration_months", 24))).isoformat()
+        except Exception:
+            pass
+    w = Warranty(**payload)
+    await db.warranties.insert_one(w.model_dump())
+    return w.model_dump()
+
+
+@api.patch("/warranties/{wid}")
+async def update_warranty(wid: str, body: dict, user: dict = Depends(get_current_user)):
+    body.pop("id", None)
+    await db.warranties.update_one({"id": wid}, {"$set": body})
+    return await db.warranties.find_one({"id": wid}, {"_id": 0})
+
+
+@api.delete("/warranties/{wid}")
+async def delete_warranty(wid: str, user: dict = Depends(get_current_user)):
+    await db.warranties.delete_one({"id": wid})
+    return {"ok": True}
+
+
+# ============ SERVICE TICKETS ============
+@api.get("/service-tickets")
+async def list_tickets(status: Optional[str] = None, mine: Optional[bool] = False,
+                       user: dict = Depends(get_current_user)):
+    query = {}
+    if mine:
+        query["assigned_to"] = user["id"]
+    if status:
+        query["status"] = status
+    docs = await db.service_tickets.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api.post("/service-tickets")
+async def create_ticket(body: ServiceTicketBase, user: dict = Depends(get_current_user)):
+    t = ServiceTicket(**body.model_dump())
+    await db.service_tickets.insert_one(t.model_dump())
+    if t.assigned_to:
+        await create_internal_notification(
+            db, user_id=t.assigned_to, customer_id=t.customer_id, kind="service",
+            title="Intervenție alocată", body=t.problem,
+        )
+    return t.model_dump()
+
+
+@api.patch("/service-tickets/{tid}")
+async def update_ticket(tid: str, body: dict, user: dict = Depends(get_current_user)):
+    body.pop("id", None)
+    body["updated_at"] = now_iso()
+    await db.service_tickets.update_one({"id": tid}, {"$set": body})
+    return await db.service_tickets.find_one({"id": tid}, {"_id": 0})
+
+
+@api.delete("/service-tickets/{tid}")
+async def delete_ticket(tid: str, user: dict = Depends(get_current_user)):
+    await db.service_tickets.delete_one({"id": tid})
+    return {"ok": True}
+
+
+# ============ NOTIFICATIONS ============
+@api.get("/notifications")
+async def list_notifications(user: dict = Depends(get_current_user)):
+    query = {"$or": [{"user_id": user["id"]}, {"user_id": ""}]}
+    docs = await db.notifications.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return docs
+
+
+@api.post("/notifications/{nid}/read")
+async def mark_read(nid: str, user: dict = Depends(get_current_user)):
+    await db.notifications.update_one({"id": nid}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+@api.post("/notifications/read-all")
+async def mark_all_read(user: dict = Depends(get_current_user)):
+    await db.notifications.update_many(
+        {"$or": [{"user_id": user["id"]}, {"user_id": ""}]}, {"$set": {"read": True}}
+    )
+    return {"ok": True}
+
+
+# ============ SETTINGS ============
+@api.get("/settings")
+async def get_settings(user: dict = Depends(get_current_user)):
+    doc = await db.settings.find_one({"id": "singleton"}, {"_id": 0})
+    if not doc:
+        s = Settings()
+        await db.settings.insert_one(s.model_dump())
+        return s.model_dump()
+    return doc
+
+
+@api.put("/settings")
+async def update_settings(body: dict, user: dict = Depends(require_roles("admin"))):
+    body.pop("id", None)
+    await db.settings.update_one({"id": "singleton"}, {"$set": body}, upsert=True)
+    return await db.settings.find_one({"id": "singleton"}, {"_id": 0})
+
+
+# ============ DASHBOARD STATS ============
+@api.get("/dashboard/stats")
+async def dashboard_stats(user: dict = Depends(get_current_user)):
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    measurements_today = await db.measurements.count_documents({"date": today})
+    installations_today = await db.installations.count_documents({"date": today})
+    unassigned_measurements = await db.measurements.count_documents({
+        "$or": [{"assigned_to": ""}, {"assigned_to": None}]
+    })
+    unassigned_installations = await db.installations.count_documents({
+        "$or": [{"assigned_to": ""}, {"assigned_to": None}]
+    })
+    late_installations = await db.installations.count_documents({
+        "date": {"$lt": today},
+        "status": {"$nin": ["finalizat", "anulat"]}
+    })
+    new_leads = await db.leads.count_documents({"status": "nou"})
+    offers_to_make = await db.leads.count_documents({"status": "programat"})
+    in_production = await db.production.count_documents({"status": {"$in": ["nou", "in_lucru", "in_asteptare_material"]}})
+    ready_to_install = await db.work_orders.count_documents({"status": "gata_de_montaj"})
+    active_warranties = await db.warranties.count_documents({"status": "activa"})
+    open_tickets = await db.service_tickets.count_documents({"status": {"$in": ["noua", "alocata", "in_lucru"]}})
+    total_customers = await db.customers.count_documents({})
+
+    return {
+        "measurements_today": measurements_today,
+        "installations_today": installations_today,
+        "unassigned": unassigned_measurements + unassigned_installations,
+        "late_works": late_installations,
+        "new_leads": new_leads,
+        "offers_to_make": offers_to_make,
+        "in_production": in_production,
+        "ready_to_install": ready_to_install,
+        "active_warranties": active_warranties,
+        "open_tickets": open_tickets,
+        "total_customers": total_customers,
+    }
+
+
+# ============ REPORTS ============
+@api.get("/reports/summary")
+async def reports_summary(user: dict = Depends(get_current_user)):
+    # Basic aggregated counts
+    def _agg_status(coll):
+        return db[coll].aggregate([{"$group": {"_id": "$status", "count": {"$sum": 1}}}])
+
+    async def _to_list(cursor):
+        return await cursor.to_list(100)
+
+    leads_by_status = await _to_list(_agg_status("leads"))
+    orders_by_status = await _to_list(_agg_status("work_orders"))
+    measurements_by_status = await _to_list(_agg_status("measurements"))
+    installations_by_status = await _to_list(_agg_status("installations"))
+    sources = await _to_list(db.customers.aggregate([
+        {"$group": {"_id": "$source", "count": {"$sum": 1}}}
+    ]))
+    # Employee performance: installations finished by installer
+    perf = await _to_list(db.installations.aggregate([
+        {"$match": {"status": "finalizat"}},
+        {"$group": {"_id": "$assigned_to", "count": {"$sum": 1}}},
+    ]))
+    return {
+        "leads_by_status": leads_by_status,
+        "orders_by_status": orders_by_status,
+        "measurements_by_status": measurements_by_status,
+        "installations_by_status": installations_by_status,
+        "customer_sources": sources,
+        "employee_performance": perf,
+    }
+
+
+# ============ CLIENT PORTAL (OTP) ============
+class OtpRequest(BaseModel):
+    phone: str
+
+
+class OtpVerify(BaseModel):
+    phone: str
+    code: str
+
+
+@api.post("/client-auth/request-otp")
+async def client_request_otp(body: OtpRequest):
+    phone = body.phone.strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Telefon obligatoriu")
+    customer = await db.customers.find_one({"phone": phone}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Nu găsim un cont client cu acest număr")
+    code = "".join(random.choices(string.digits, k=6))
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    otp = OtpCode(phone=phone, code=code, expires_at=expires)
+    await db.otp_codes.insert_one(otp.model_dump())
+    # In production: send via WhatsApp/SMS. In demo: expose code
+    await send_whatsapp_message(phone, f"Codul tău ART JUNKIE este: {code}")
+    logger.info(f"[OTP DEMO] {phone} -> {code}")
+    return {"ok": True, "demo_code": code}  # Demo only
+
+
+@api.post("/client-auth/verify-otp")
+async def client_verify_otp(body: OtpVerify, response: Response):
+    phone = body.phone.strip()
+    now = datetime.now(timezone.utc).isoformat()
+    otp = await db.otp_codes.find_one({
+        "phone": phone, "code": body.code, "used": False,
+        "expires_at": {"$gt": now},
+    })
+    if not otp:
+        raise HTTPException(status_code=400, detail="Cod invalid sau expirat")
+    await db.otp_codes.update_one({"id": otp["id"]}, {"$set": {"used": True}})
+    customer = await db.customers.find_one({"phone": phone}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Client inexistent")
+    token = create_client_token(customer["id"], phone)
+    set_client_cookie(response, token)
+    return {"customer": customer}
+
+
+@api.post("/client-auth/logout")
+async def client_logout(response: Response):
+    clear_auth_cookies(response)
+    return {"ok": True}
+
+
+@api.get("/client-auth/me")
+async def client_me(customer: dict = Depends(get_current_client)):
+    return customer
+
+
+# ============ CLIENT PORTAL DATA ============
+@api.get("/client/orders")
+async def client_orders(customer: dict = Depends(get_current_client)):
+    docs = await db.work_orders.find({"customer_id": customer["id"]}, {"_id": 0}).to_list(100)
+    return docs
+
+
+@api.get("/client/orders/{oid}")
+async def client_order_detail(oid: str, customer: dict = Depends(get_current_client)):
+    wo = await db.work_orders.find_one({"id": oid, "customer_id": customer["id"]}, {"_id": 0})
+    if not wo:
+        raise HTTPException(status_code=404, detail="Comandă inexistentă")
+    measurement = await db.measurements.find_one({"customer_id": customer["id"]}, {"_id": 0})
+    installation = await db.installations.find_one({"work_order_id": oid}, {"_id": 0})
+    warranty = await db.warranties.find_one({"work_order_id": oid}, {"_id": 0})
+    return {"work_order": wo, "measurement": measurement, "installation": installation, "warranty": warranty}
+
+
+@api.get("/client/warranties")
+async def client_warranties(customer: dict = Depends(get_current_client)):
+    docs = await db.warranties.find({"customer_id": customer["id"]}, {"_id": 0}).to_list(100)
+    return docs
+
+
+@api.get("/client/service")
+async def client_service(customer: dict = Depends(get_current_client)):
+    docs = await db.service_tickets.find({"customer_id": customer["id"]}, {"_id": 0}).to_list(100)
+    return docs
+
+
+class ClientServiceRequest(BaseModel):
+    problem: str
+    warranty_id: Optional[str] = ""
+    work_order_id: Optional[str] = ""
+
+
+@api.post("/client/service")
+async def client_create_service(body: ClientServiceRequest, customer: dict = Depends(get_current_client)):
+    t = ServiceTicket(
+        customer_id=customer["id"], warranty_id=body.warranty_id or "",
+        work_order_id=body.work_order_id or "",
+        problem=body.problem, status="noua",
+    )
+    await db.service_tickets.insert_one(t.model_dump())
+    await create_internal_notification(
+        db, customer_id=customer["id"], kind="service",
+        title="Solicitare service nouă", body=body.problem,
+    )
+    return t.model_dump()
+
+
+@api.get("/client/messages")
+async def client_messages(customer: dict = Depends(get_current_client)):
+    docs = await db.messages.find({"customer_id": customer["id"]}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    return docs
+
+
+class ClientMessage(BaseModel):
+    body: str
+
+
+@api.post("/client/messages")
+async def client_send_message(body: ClientMessage, customer: dict = Depends(get_current_client)):
+    m = Message(customer_id=customer["id"], from_role="client", body=body.body)
+    await db.messages.insert_one(m.model_dump())
+    return m.model_dump()
+
+
+# ============ MESSAGES (staff) ============
+@api.get("/messages/{customer_id}")
+async def staff_messages(customer_id: str, user: dict = Depends(get_current_user)):
+    docs = await db.messages.find({"customer_id": customer_id}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    return docs
+
+
+@api.post("/messages/{customer_id}")
+async def staff_send_message(customer_id: str, body: ClientMessage, user: dict = Depends(get_current_user)):
+    m = Message(customer_id=customer_id, from_role="staff", body=body.body)
+    await db.messages.insert_one(m.model_dump())
+    return m.model_dump()
+
+
+@api.get("/")
+async def root():
+    return {"app": "ART JUNKIE OS", "version": "1.0"}
+
+
+app.include_router(api)
+
+
+@app.on_event("startup")
+async def startup():
+    await seed_all(db)
+    logger.info("ART JUNKIE OS ready.")
+
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
+async def shutdown():
+    mongo_client.close()

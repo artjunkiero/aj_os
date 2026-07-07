@@ -1,0 +1,16 @@
+{
+  "name": "ART JUNKIE OS",
+  "short_name": "AJ OS",
+  "description": "Platforma internă ART JUNKIE — clienți, măsurători, montaje, garanții.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B1F3A",
+  "theme_color": "#0B1F3A",
+  "orientation": "portrait-primary",
+  "lang": "ro",
+  "scope": "/",
+  "icons": [
+    { "src": "/logo192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "/logo512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
