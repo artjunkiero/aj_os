@@ -111,7 +111,7 @@ class TestLeads:
         assert r.status_code == 200
         assert r.json()["status"] == "contactat"
         r = admin_sess.get(f"{API}/leads")
-        assert any(l["id"] == lid for l in r.json())
+        assert any(x["id"] == lid for x in r.json())
         admin_sess.delete(f"{API}/leads/{lid}")
         admin_sess.delete(f"{API}/customers/{c['id']}")
 
