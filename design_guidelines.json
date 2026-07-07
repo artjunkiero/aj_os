@@ -1,0 +1,91 @@
+{
+  "theme": "hybrid_multi_shell",
+  "archetype": "5_luxury_and_4_swiss_high_contrast",
+  "typography": {
+    "primary_font": "Manrope",
+    "font_import": "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');",
+    "headings": {
+      "font_family": "'Manrope', sans-serif",
+      "weights": ["600", "700", "800"],
+      "tracking": "tracking-tight"
+    },
+    "body": {
+      "font_family": "'Manrope', sans-serif",
+      "weights": ["400", "500", "600"],
+      "tracking": "tracking-normal"
+    }
+  },
+  "colors": {
+    "brand_navy": "#0B1F3A",
+    "brand_navy_light": "#16335C",
+    "brand_gold": "#C9A961",
+    "brand_gold_light": "#DDC58F",
+    "brand_off_white": "#F8F7F4",
+    "brand_black": "#1A1A1A",
+    "background_admin": "#F8F7F4",
+    "background_employee": "#0B1F3A",
+    "background_client": "#F8F7F4",
+    "surface_admin": "#FFFFFF",
+    "surface_employee": "#16335C",
+    "text_primary_light": "#1A1A1A",
+    "text_secondary_light": "#4A4A4A",
+    "text_primary_dark": "#FFFFFF",
+    "text_secondary_dark": "#D1D5DB"
+  },
+  "status_colors": {
+    "new": { "bg": "#E0F2FE", "text": "#0284C7", "border": "#BAE6FD" },
+    "assigned": { "bg": "#FEF08A", "text": "#854D0E", "border": "#FDE047" },
+    "notified": { "bg": "#E0E7FF", "text": "#4338CA", "border": "#C7D2FE" },
+    "on_the_way": { "bg": "#FED7AA", "text": "#C2410C", "border": "#FDBA74" },
+    "arrived": { "bg": "#FBCFE8", "text": "#BE185D", "border": "#F9A8D4" },
+    "measured": { "bg": "#D9F99D", "text": "#4D7C0F", "border": "#BEF264" },
+    "installing": { "bg": "#DDD6FE", "text": "#6D28D9", "border": "#C4B5FD" },
+    "finished": { "bg": "#DCFCE7", "text": "#15803D", "border": "#BBF7D0" },
+    "problem": { "bg": "#FEE2E2", "text": "#B91C1C", "border": "#FECACA" },
+    "rescheduled": { "bg": "#FFEDD5", "text": "#C2410C", "border": "#FED7AA" }
+  },
+  "spacing_and_layout": {
+    "admin": {
+      "strategy": "Dense data but breathable, generous padding inside cards (p-6), sharp edges (rounded-sm or rounded-md max)",
+      "sidebar": "w-64 fixed, deep navy background, gold accents on active state",
+      "content": "ml-64 p-8"
+    },
+    "employee": {
+      "strategy": "Mobile-first, huge tap targets (min h-14 buttons), generous vertical spacing (gap-6)",
+      "bottom_nav": "Fixed bottom nav, height h-16, dark background",
+      "content": "pb-24 px-4 pt-6"
+    },
+    "client": {
+      "strategy": "Minimal, high negative space, centered max-w-3xl constraints for forms and timelines.",
+      "content": "max-w-4xl mx-auto p-6 md:p-12"
+    }
+  },
+  "components": {
+    "cards": "Subtle ambient shadows (shadow-sm) on admin. No purple gradients. 1px borders (border-gray-200) for definition.",
+    "buttons": "Premium feel. Primary: Navy background, gold text/icon on hover. Or Gold background, Navy text.",
+    "tables": "Left-aligned headers, dense padding (py-3 px-4), strict bottom borders, no vertical lines.",
+    "timeline": "Vertical line in gold, nodes in navy. Distinctive, readable.",
+    "kanban": "Light gray column backgrounds, white cards, subtle shadow on drag.",
+    "icons": "lucide-react for all standard icons."
+  },
+  "media": {
+    "login_background": {
+      "url": "https://images.unsplash.com/photo-1577926606472-fc6d3a33f7e1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2OTV8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBpbnRlcmlvciUyMGN1cnRhaW5zfGVufDB8fHx8MTc4MzQxOTI5Nnww&ixlib=rb-4.1.0&q=85",
+      "description": "Elegant empty sofa with premium luxury curtains in the background."
+    },
+    "client_portal_hero": {
+      "url": "https://images.unsplash.com/photo-1628428988968-5549dd02dde2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2OTV8MHwxfHNlYXJjaHwzfHxsdXh1cnklMjBpbnRlcmlvciUyMGN1cnRhaW5zfGVufDB8fHx8MTc4MzQxOTI5Nnww&ixlib=rb-4.1.0&q=85",
+      "description": "Gold and white floral window curtain for client portal aesthetics."
+    }
+  },
+  "instructions_to_main_agent": [
+    "1. Setup Routing: Create 4 main root layouts: /login, /admin, /employee, /client.",
+    "2. Styling: Configure Tailwind with the exact colors from this JSON. Add Manrope to the global CSS via @import.",
+    "3. Admin Shell: Implement a desktop-first dashboard with a fixed deep navy (#0B1F3A) sidebar. Main content area should be off-white (#F8F7F4).",
+    "4. Admin Dashboard: Build KPI cards (today's measurements, installations, etc.). Build the Lead Kanban pipeline and Data Tables for Orders/Customers.",
+    "5. Employee App: Build a mobile-first dark theme UI (#0B1F3A background) with huge tap targets. Use large action buttons (On the way, Arrived, etc.). Include a bottom navigation bar.",
+    "6. Client Portal: Build a centered, minimal, light-themed view featuring a vertical timeline for order lifecycle and simple forms for service requests.",
+    "7. Data Attributes: Add `data-testid` to ALL buttons, inputs, links, and key informational elements.",
+    "8. Icons: Install and use `lucide-react` for all iconography."
+  ]
+}
