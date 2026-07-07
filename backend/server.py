@@ -897,6 +897,7 @@ async def client_referral(customer: dict = Depends(get_current_client)):
         "referral_enabled": settings.get("referral_enabled", True),
         "whatsapp_template": templates.get("referral_share", ""),
         "company_name": settings.get("company_name", "ART JUNKIE"),
+        "referrer_name": customer.get("name", ""),
     }
 
 

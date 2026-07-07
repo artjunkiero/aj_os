@@ -18,9 +18,13 @@ export default function ClientReferrals() {
   if (!info) return <div className="text-slate-400 text-sm">Se încarcă…</div>;
 
   const shareLink = `${window.location.origin}/refer/${info.code}`;
+  const referrerName = (info.referrer_name || "");
   const message = (info.whatsapp_template || "")
-    .replace("{link}", shareLink)
-    .replace("{discount}", info.discount || "10%");
+    .replaceAll("{link}", shareLink)
+    .replaceAll("{discount}", info.discount || "10%")
+    .replaceAll("{code}", info.code || "")
+    .replaceAll("{referrer_name}", referrerName)
+    .replaceAll("{company_name}", info.company_name || "ART JUNKIE");
 
   const copyLink = async () => {
     try {

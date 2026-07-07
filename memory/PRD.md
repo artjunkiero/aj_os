@@ -23,7 +23,24 @@ Complete internal web platform for ART JUNKIE (artjunkie.ro) — a Romanian comp
 - All forms validated, all lists have fallback empty states.
 
 ## What's Been Implemented (2026-07)
-### Backend
+### Iteration 1
+- Full stack: FastAPI + MongoDB, 10 core modules (CRM, leads, măsurători, montaje, comenzi, producție, garanții, service, notificări, setări).
+- Multi-role JWT (cookie) auth, employee mobile PWA shell, client OTP portal, 11-stage lifecycle timeline.
+- Seed with 8 users + 5 customers and full related data. **17/17 backend tests + all critical frontend flows passing.**
+
+### Iteration 2 — Referral flow "Recomandă un prieten"
+- Referral model + endpoints:
+  - `GET /api/refer/{code}` (public) — returns referrer name, discount, company name.
+  - `POST /api/refer/{code}` (public) — creates Customer (or reuses phone match), Lead with source=`recomandare` (notes include referrer name), Referral row with status `lead_creata`, internal admin notification.
+  - `GET /api/client/referral` — code + eligibility (based on active warranty or finalized order) + share message template.
+  - `GET /api/client/referrals`, `GET /api/referrals`, `PATCH /api/referrals/{id}`.
+- Unique 8-char alphanumeric code per customer (no ambiguous chars), auto-backfilled on startup.
+- Startup migration adds `referral_discount`, `referral_enabled`, and `referral_share` template to existing Settings.
+- Client shell: new "Recomandă" nav tab, CTA card on Dashboard when eligible, `/client/recomanda` with copy link / WhatsApp / native share, message preview with editable template.
+- Public `/refer/:code` page with premium hero and full form (name, phone, city, product, message).
+- Admin: `/admin/recomandari` with KPI-per-status + table + inline status change; new "Recomandări" tab in customer detail; referral code displayed in header; **Settings** now has "Program Recomandare" card (discount + enabled toggle + editable `referral_share` template).
+- **Discount is NOT applied automatically** — admin confirms manually in offer/order.
+- **16/16 new backend tests + all critical frontend flows passing.**
 - Cookie JWT auth with bcrypt hashing, role guards, super_admin bypass
 - Models: User, Customer, Lead, Measurement, Installation, WorkOrder, ProductionItem, Warranty, ServiceTicket, Notification, Settings, OtpCode, Message
 - CRUD for all 10 modules, filters (mine, status, q)

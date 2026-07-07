@@ -123,7 +123,7 @@ class TestPublicRefer:
 
         # (2) Lead created with source=recomandare and referrer name in notes
         leads = admin_sess.get(f"{API}/leads").json()
-        lead = next((l for l in leads if l.get("customer_id") == friend["id"]), None)
+        lead = next((ld for ld in leads if ld.get("customer_id") == friend["id"]), None)
         assert lead, "Lead not created"
         assert lead["source"] == "recomandare"
         assert cust["name"] in (lead.get("notes") or ""), f"Referrer name missing in lead notes: {lead.get('notes')}"
@@ -139,7 +139,7 @@ class TestPublicRefer:
         assert ref_row.get("referrer_phone") == cust["phone"]
 
         # (4) Notification broadcast to admins (user_id="")
-        notifs = admin_sess.get(f"{API}/notifications").json()
+        admin_sess.get(f"{API}/notifications").json()
         # Notification list may filter to current user; check kind referral for this customer
         # If empty, at least referral must be listed in admin referrals — already asserted.
         # Optionally verify kind='referral' in db-ish way
