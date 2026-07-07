@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 
 import LoginPage from "@/pages/Login";
 import ClientLogin from "@/pages/client/Login";
+import ReferPage from "@/pages/Refer";
 
 import AdminLayout from "@/pages/admin/Layout";
 import AdminDashboard from "@/pages/admin/Dashboard";
@@ -23,6 +24,7 @@ import AdminService from "@/pages/admin/Service";
 import AdminNotifications from "@/pages/admin/Notifications";
 import AdminReports from "@/pages/admin/Reports";
 import AdminSettings from "@/pages/admin/Settings";
+import AdminReferrals from "@/pages/admin/Referrals";
 
 import EmployeeLayout from "@/pages/employee/Layout";
 import EmployeeHome from "@/pages/employee/Home";
@@ -40,6 +42,7 @@ import ClientWarranties from "@/pages/client/Warranties";
 import ClientService from "@/pages/client/Service";
 import ClientDocuments from "@/pages/client/Documents";
 import ClientMessages from "@/pages/client/Messages";
+import ClientReferrals from "@/pages/client/Referrals";
 
 const ADMIN_ROLES = ["super_admin", "admin", "sales"];
 
@@ -99,6 +102,7 @@ export default function App() {
           <Route path="/admin/login" element={<LoginPage variant="admin" />} />
           <Route path="/app/login" element={<LoginPage variant="employee" />} />
           <Route path="/client/login" element={<ClientLogin />} />
+          <Route path="/refer/:code" element={<ReferPage />} />
 
           {/* Admin routes */}
           <Route element={<StaffGuard allowRoles={ADMIN_ROLES} />}>
@@ -118,6 +122,7 @@ export default function App() {
               <Route path="service" element={<AdminService />} />
               <Route path="notificari" element={<AdminNotifications />} />
               <Route path="rapoarte" element={<AdminReports />} />
+              <Route path="recomandari" element={<AdminReferrals />} />
               <Route path="setari" element={<AdminSettings />} />
             </Route>
           </Route>
@@ -143,6 +148,7 @@ export default function App() {
               <Route path="comenzi/:id" element={<ClientOrderDetail />} />
               <Route path="garantii" element={<ClientWarranties />} />
               <Route path="service" element={<ClientService />} />
+              <Route path="recomanda" element={<ClientReferrals />} />
               <Route path="documente" element={<ClientDocuments />} />
               <Route path="mesaje" element={<ClientMessages />} />
             </Route>

@@ -3,20 +3,23 @@ import { Link } from "react-router-dom";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Badge, WORK_ORDER_STATUS, WARRANTY_STATUS, formatDate } from "@/lib/status";
-import { Package, ShieldCheck, LifeBuoy, ArrowRight, Sparkles } from "lucide-react";
+import { Package, ShieldCheck, LifeBuoy, ArrowRight, Sparkles, Gift } from "lucide-react";
 
 export default function ClientDashboard() {
   const { client } = useAuth();
   const [orders, setOrders] = useState([]);
   const [warranties, setWarranties] = useState([]);
   const [service, setService] = useState([]);
+  const [referralInfo, setReferralInfo] = useState(null);
 
   useEffect(() => {
     (async () => {
-      const [o, w, s] = await Promise.all([
-        api.get("/client/orders"), api.get("/client/warranties"), api.get("/client/service"),
+      const [o, w, s, r] = await Promise.all([
+        api.get("/client/orders"), api.get("/client/warranties"),
+        api.get("/client/service"), api.get("/client/referral"),
       ]);
       setOrders(o.data || []); setWarranties(w.data || []); setService(s.data || []);
+      setReferralInfo(r.data || null);
     })();
   }, []);
 
@@ -31,6 +34,30 @@ export default function ClientDashboard() {
         <h1 className="text-4xl font-extrabold tracking-tight text-aj-navy">Salut, {client?.name?.split(" ")[0]}.</h1>
         <p className="text-slate-600 mt-2">Iată situația ta cu ART JUNKIE.</p>
       </div>
+
+      {referralInfo?.eligible && (
+        <Link to="/client/recomanda"
+          className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-aj-navy to-aj-navy2 text-white p-6 sm:p-8 block hover:shadow-lg transition-shadow group"
+          data-testid="referral-card">
+          <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-aj-gold/15" />
+          <div className="absolute -bottom-16 -left-6 w-44 h-44 rounded-full bg-aj-gold/5" />
+          <div className="relative flex items-center gap-5">
+            <div className="w-14 h-14 rounded-xl bg-aj-gold text-aj-navy flex items-center justify-center flex-shrink-0">
+              <Gift size={26} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] uppercase tracking-[0.3em] text-aj-gold mb-1">Program VIP</div>
+              <div className="text-xl sm:text-2xl font-extrabold leading-tight">
+                Recomandă ART JUNKIE unui prieten
+              </div>
+              <p className="text-white/70 text-sm mt-1">
+                Prietenii tăi primesc <b className="text-aj-gold">{referralInfo.discount} discount</b> la prima comandă.
+              </p>
+            </div>
+            <ArrowRight className="text-aj-gold group-hover:translate-x-1 transition-transform hidden sm:block" size={22} />
+          </div>
+        </Link>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="Comenzi" value={orders.length} icon={Package} />

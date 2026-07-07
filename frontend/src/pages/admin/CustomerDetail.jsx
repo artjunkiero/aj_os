@@ -4,9 +4,9 @@ import api from "@/lib/api";
 import {
   Badge, CUSTOMER_STATUS, LEAD_STATUS, MEASUREMENT_STATUS,
   INSTALLATION_STATUS, WORK_ORDER_STATUS, WARRANTY_STATUS, SERVICE_STATUS,
-  formatDate,
+  REFERRAL_STATUS, formatDate,
 } from "@/lib/status";
-import { ArrowLeft, Phone, Mail, MapPin, Building2 } from "lucide-react";
+import { ArrowLeft, Phone, Mail, MapPin, Building2, Gift } from "lucide-react";
 
 const TABS = [
   { key: "overview", label: "Prezentare" },
@@ -16,6 +16,7 @@ const TABS = [
   { key: "work_orders", label: "Comenzi" },
   { key: "warranties", label: "Garanții" },
   { key: "service_tickets", label: "Service" },
+  { key: "referrals", label: "Recomandări" },
 ];
 
 export default function CustomerDetail() {
@@ -58,6 +59,11 @@ export default function CustomerDetail() {
           <div className="text-right space-y-2">
             <Badge map={CUSTOMER_STATUS} value={c.status} />
             <div className="text-xs text-slate-500 capitalize">Sursă: {c.source}</div>
+            {c.referral_code && (
+              <div className="text-xs text-slate-500 flex items-center gap-1 justify-end">
+                <Gift size={11} className="text-aj-gold" /> Cod ref: <span className="font-mono font-semibold text-aj-navy">{c.referral_code}</span>
+              </div>
+            )}
           </div>
         </div>
         {c.notes && <p className="mt-4 pt-4 border-t border-aj-line text-sm text-slate-600">{c.notes}</p>}
@@ -86,6 +92,7 @@ export default function CustomerDetail() {
           <StatCard label="Montaje" value={data.installations?.length || 0} />
           <StatCard label="Garanții" value={data.warranties?.length || 0} />
           <StatCard label="Intervenții service" value={data.service_tickets?.length || 0} />
+          <StatCard label="Recomandări făcute" value={data.referrals?.length || 0} />
         </div>
       )}
 
@@ -109,6 +116,12 @@ export default function CustomerDetail() {
       ]} />}
       {tab === "service_tickets" && <ListTable rows={data.service_tickets} map={SERVICE_STATUS} cols={[
         { key: "problem", label: "Problemă" }, { key: "priority", label: "Prioritate" }, { key: "created_at", label: "Creat", fmt: formatDate },
+      ]} />}
+      {tab === "referrals" && <ListTable rows={data.referrals} map={REFERRAL_STATUS} cols={[
+        { key: "friend_name", label: "Prieten recomandat" },
+        { key: "friend_phone", label: "Telefon" },
+        { key: "product_interest", label: "Interes" },
+        { key: "created_at", label: "Creat", fmt: formatDate },
       ]} />}
     </div>
   );

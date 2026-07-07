@@ -63,6 +63,7 @@ class CustomerBase(BaseModel):
 class Customer(CustomerBase):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=new_id)
+    referral_code: str = ""  # generated once, uppercase alphanumeric (8 chars)
     created_at: str = Field(default_factory=now_iso)
     updated_at: str = Field(default_factory=now_iso)
 
@@ -261,9 +262,12 @@ class Settings(BaseModel):
         "client_measurement": "Bună ziua! Programarea dumneavoastră ART JUNKIE pentru măsurători a fost stabilită pentru {date}, ora {time}. Vă mulțumim!",
         "client_installation": "Bună ziua! Montajul ART JUNKIE este programat pentru {date}, ora {time}. Vă mulțumim!",
         "reschedule": "Bună ziua! Programarea ART JUNKIE a fost reprogramată pentru {date}, ora {time}.",
-        "completed": "Vă mulțumim că ați ales ART JUNKIE. Lucrarea a fost finalizată. Garanția dumneavoastră este activă."
+        "completed": "Vă mulțumim că ați ales ART JUNKIE. Lucrarea a fost finalizată. Garanția dumneavoastră este activă.",
+        "referral_share": "Bună! Am ales ART JUNKIE pentru perdele/draperii/rolete și sunt foarte mulțumit(ă). Îți recomand și ție echipa lor — dacă folosești linkul meu, primești {discount} discount la prima comandă: {link}"
     })
     notifications_enabled: bool = True
+    referral_discount: str = "10%"  # afișat prietenului la formular
+    referral_enabled: bool = True
 
 
 # ============ OTP ============
@@ -289,3 +293,25 @@ class Message(MessageBase):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=new_id)
     created_at: str = Field(default_factory=now_iso)
+
+
+# ============ REFERRAL ============
+class ReferralBase(BaseModel):
+    referrer_customer_id: str
+    code: str = ""  # snapshot of referrer's code at time of creation
+    friend_name: str
+    friend_phone: str
+    friend_city: Optional[str] = ""
+    product_interest: Optional[str] = ""
+    friend_message: Optional[str] = ""
+    status: str = "trimisa"  # trimisa, lead_creata, ofertat, castigat, pierdut
+    lead_id: Optional[str] = ""
+    created_customer_id: Optional[str] = ""
+    admin_notes: Optional[str] = ""
+
+
+class Referral(ReferralBase):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=new_id)
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)

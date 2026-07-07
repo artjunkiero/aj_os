@@ -44,8 +44,32 @@ export default function AdminSettings() {
       </div>
 
       <div className="aj-card p-6 space-y-4">
+        <h3 className="text-lg font-bold text-aj-navy border-b border-aj-line pb-3 mb-3">Program Recomandare</h3>
+        <p className="text-xs text-slate-500 mb-2">Configurează discountul afișat prietenilor recomandați și textul mesajului de share.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Discount recomandare (afișat prietenului)">
+            <TextInput value={s.referral_discount || "10%"}
+              onChange={(e) => setS({...s, referral_discount: e.target.value})}
+              placeholder="10% sau 200 lei"
+              data-testid="setting-referral-discount" />
+          </Field>
+          <Field label="Program activ">
+            <select value={String(s.referral_enabled !== false)}
+              onChange={(e) => setS({...s, referral_enabled: e.target.value === "true"})}
+              className="aj-input" data-testid="setting-referral-enabled">
+              <option value="true">Da</option>
+              <option value="false">Nu</option>
+            </select>
+          </Field>
+        </div>
+        <p className="text-xs text-slate-500 mt-3">
+          Discount-ul <b>NU</b> se acordă automat. Adminul confirmă manual la crearea ofertei.
+        </p>
+      </div>
+
+      <div className="aj-card p-6 space-y-4">
         <h3 className="text-lg font-bold text-aj-navy border-b border-aj-line pb-3 mb-3">Template-uri mesaje</h3>
-        <p className="text-xs text-slate-500 mb-4">Variabile disponibile: <span className="font-mono">{"{clientName}, {clientPhone}, {address}, {date}, {time}, {products}"}</span></p>
+        <p className="text-xs text-slate-500 mb-4">Variabile disponibile: <span className="font-mono">{"{clientName}, {clientPhone}, {address}, {date}, {time}, {products}"}</span>. Pentru <b>referral_share</b>: <span className="font-mono">{"{link}, {discount}"}</span>.</p>
         {Object.entries(s.templates || {}).map(([k, v]) => (
           <Field label={k.replaceAll("_"," ")} key={k} wide>
             <TextArea rows={3} value={v} onChange={(e) => setT(k, e.target.value)} data-testid={`template-${k}`} />

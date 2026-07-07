@@ -5,7 +5,7 @@ import { ROLE_LABELS } from "@/lib/status";
 import {
   LayoutDashboard, Users, UserCog, Ruler, Wrench, ClipboardList, Factory,
   CalendarDays, ShieldCheck, LifeBuoy, Bell, BarChart3, Settings,
-  LogOut, Sparkles, Target,
+  LogOut, Sparkles, Target, Gift,
 } from "lucide-react";
 
 const NAV = [
@@ -19,6 +19,7 @@ const NAV = [
   { to: "/admin/calendar", label: "Calendar", icon: CalendarDays, tid: "nav-calendar" },
   { to: "/admin/garantii", label: "Garanții", icon: ShieldCheck, tid: "nav-warranties" },
   { to: "/admin/service", label: "Service", icon: LifeBuoy, tid: "nav-service" },
+  { to: "/admin/recomandari", label: "Recomandări", icon: Gift, tid: "nav-referrals" },
   { to: "/admin/angajati", label: "Angajați", icon: UserCog, tid: "nav-employees" },
   { to: "/admin/notificari", label: "Notificări", icon: Bell, tid: "nav-notifications" },
   { to: "/admin/rapoarte", label: "Rapoarte", icon: BarChart3, tid: "nav-reports" },

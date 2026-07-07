@@ -1,13 +1,14 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
-import { LayoutDashboard, Package, ShieldCheck, LifeBuoy, FileText, MessageSquare, LogOut } from "lucide-react";
+import { LayoutDashboard, Package, ShieldCheck, LifeBuoy, FileText, MessageSquare, LogOut, Gift } from "lucide-react";
 
 const NAV = [
   { to: "/client", end: true, label: "Prezentare", icon: LayoutDashboard, tid: "client-nav-home" },
   { to: "/client/comenzi", label: "Comenzi", icon: Package, tid: "client-nav-orders" },
   { to: "/client/garantii", label: "Garanții", icon: ShieldCheck, tid: "client-nav-warranties" },
   { to: "/client/service", label: "Service", icon: LifeBuoy, tid: "client-nav-service" },
+  { to: "/client/recomanda", label: "Recomandă", icon: Gift, tid: "client-nav-refer" },
   { to: "/client/documente", label: "Documente", icon: FileText, tid: "client-nav-docs" },
   { to: "/client/mesaje", label: "Mesaje", icon: MessageSquare, tid: "client-nav-messages" },
 ];

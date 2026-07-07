@@ -28,7 +28,9 @@ from models import (
     WarrantyBase, Warranty,
     ServiceTicketBase, ServiceTicket,
     NotificationBase, Notification,
-    Settings, OtpCode, MessageBase, Message, now_iso, new_id, ROLES,
+    Settings, OtpCode, MessageBase, Message,
+    ReferralBase, Referral,
+    now_iso, new_id, ROLES,
 )
 from auth import (
     hash_password, verify_password,
@@ -75,6 +77,35 @@ def strip_id(doc):
 
 def strip_list(docs):
     return [strip_id(d) for d in docs]
+
+
+def _gen_referral_code() -> str:
+    # 8 chars, uppercase alphanumeric (no ambiguous chars)
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(random.choices(alphabet, k=8))
+
+
+async def _ensure_referral_code(customer_id: str) -> str:
+    doc = await db.customers.find_one({"id": customer_id}, {"_id": 0, "referral_code": 1})
+    if doc and doc.get("referral_code"):
+        return doc["referral_code"]
+    # generate unique code
+    for _ in range(10):
+        code = _gen_referral_code()
+        existing = await db.customers.find_one({"referral_code": code}, {"_id": 0, "id": 1})
+        if not existing:
+            await db.customers.update_one({"id": customer_id}, {"$set": {"referral_code": code}})
+            return code
+    # fallback (extremely unlikely collisions x10)
+    code = _gen_referral_code() + str(random.randint(0, 999))
+    await db.customers.update_one({"id": customer_id}, {"$set": {"referral_code": code}})
+    return code
+
+
+async def _backfill_referral_codes():
+    cursor = db.customers.find({"$or": [{"referral_code": {"$exists": False}}, {"referral_code": ""}]}, {"_id": 0, "id": 1})
+    async for c in cursor:
+        await _ensure_referral_code(c["id"])
 
 
 # ============ AUTH ============
@@ -183,18 +214,22 @@ async def get_customer(customer_id: str, user: dict = Depends(get_current_user))
     work_orders = await db.work_orders.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
     warranties = await db.warranties.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
     tickets = await db.service_tickets.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
+    referrals = await db.referrals.find({"referrer_customer_id": customer_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return {
         "customer": doc, "leads": leads, "measurements": measurements,
         "installations": installations, "work_orders": work_orders,
         "warranties": warranties, "service_tickets": tickets,
+        "referrals": referrals,
     }
 
 
 @api.post("/customers")
 async def create_customer(body: CustomerBase, user: dict = Depends(get_current_user)):
     c = Customer(**body.model_dump())
-    await db.customers.insert_one(c.model_dump())
-    return c.model_dump()
+    doc = c.model_dump()
+    await db.customers.insert_one(doc)
+    await _ensure_referral_code(c.id)
+    return await db.customers.find_one({"id": c.id}, {"_id": 0})
 
 
 @api.patch("/customers/{customer_id}")
@@ -748,6 +783,157 @@ async def staff_send_message(customer_id: str, body: ClientMessage, user: dict =
     return m.model_dump()
 
 
+# ============ REFERRALS ============
+class ReferralSubmit(BaseModel):
+    friend_name: str
+    friend_phone: str
+    friend_city: Optional[str] = ""
+    product_interest: Optional[str] = ""
+    friend_message: Optional[str] = ""
+
+
+def _customer_has_active_warranty(customer_id: str, warranties: list, work_orders: list) -> bool:
+    if any(w.get("status") == "activa" for w in warranties if w.get("customer_id") == customer_id):
+        return True
+    active_wo_statuses = {"garantie_activa", "finalizat", "montat"}
+    return any(w.get("status") in active_wo_statuses for w in work_orders if w.get("customer_id") == customer_id)
+
+
+@api.get("/refer/{code}")
+async def refer_info(code: str):
+    """Public endpoint: friend lands here from share link."""
+    code = code.strip().upper()
+    ref = await db.customers.find_one({"referral_code": code}, {"_id": 0, "name": 1, "referral_code": 1})
+    if not ref:
+        raise HTTPException(status_code=404, detail="Cod de recomandare invalid")
+    settings = await db.settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    return {
+        "referrer_name": ref.get("name", ""),
+        "code": code,
+        "discount": settings.get("referral_discount", "10%"),
+        "company_name": settings.get("company_name", "ART JUNKIE"),
+    }
+
+
+@api.post("/refer/{code}")
+async def refer_submit(code: str, body: ReferralSubmit):
+    """Public: friend submits the referral form."""
+    code = code.strip().upper()
+    referrer = await db.customers.find_one({"referral_code": code}, {"_id": 0})
+    if not referrer:
+        raise HTTPException(status_code=404, detail="Cod de recomandare invalid")
+    if not body.friend_name.strip() or not body.friend_phone.strip():
+        raise HTTPException(status_code=400, detail="Nume și telefon obligatorii")
+
+    friend_phone = body.friend_phone.strip()
+    # Find or create the friend as a Customer with source=recomandare
+    existing = await db.customers.find_one({"phone": friend_phone}, {"_id": 0})
+    if existing:
+        new_customer = existing
+    else:
+        c = Customer(
+            name=body.friend_name.strip(),
+            phone=friend_phone,
+            city=body.friend_city or "",
+            source="recomandare",
+            status="nou",
+            notes=(f"Recomandat de {referrer.get('name','')}. "
+                   f"Mesaj: {body.friend_message or '-'}"),
+        )
+        await db.customers.insert_one(c.model_dump())
+        await _ensure_referral_code(c.id)
+        new_customer = await db.customers.find_one({"id": c.id}, {"_id": 0})
+
+    # Create lead
+    lead = Lead(
+        customer_id=new_customer["id"],
+        source="recomandare",
+        product_interest=body.product_interest or "",
+        status="nou",
+        notes=(f"Lead din recomandare — recomandat de {referrer.get('name','')} "
+               f"(cod {code}). {body.friend_message or ''}").strip(),
+    )
+    await db.leads.insert_one(lead.model_dump())
+
+    # Create referral record
+    ref = Referral(
+        referrer_customer_id=referrer["id"],
+        code=code,
+        friend_name=body.friend_name.strip(),
+        friend_phone=friend_phone,
+        friend_city=body.friend_city or "",
+        product_interest=body.product_interest or "",
+        friend_message=body.friend_message or "",
+        status="lead_creata",
+        lead_id=lead.id,
+        created_customer_id=new_customer["id"],
+    )
+    await db.referrals.insert_one(ref.model_dump())
+
+    # Internal notification (broadcast to admins: user_id="")
+    await create_internal_notification(
+        db, user_id="", customer_id=new_customer["id"], kind="referral",
+        title="Lead nou din recomandare",
+        body=f"{referrer.get('name','')} a recomandat pe {body.friend_name.strip()} ({friend_phone}).",
+        link="/admin/recomandari",
+    )
+
+    return {"ok": True, "message": "Îți mulțumim! Te vom contacta în curând."}
+
+
+@api.get("/client/referral")
+async def client_referral(customer: dict = Depends(get_current_client)):
+    """Return current client's referral code, eligibility, share link + template."""
+    code = customer.get("referral_code") or await _ensure_referral_code(customer["id"])
+    warranties = await db.warranties.find({"customer_id": customer["id"]}, {"_id": 0}).to_list(100)
+    work_orders = await db.work_orders.find({"customer_id": customer["id"]}, {"_id": 0}).to_list(100)
+    eligible = _customer_has_active_warranty(customer["id"], warranties, work_orders)
+    settings = await db.settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    templates = settings.get("templates", {}) or {}
+    return {
+        "code": code,
+        "eligible": eligible,
+        "discount": settings.get("referral_discount", "10%"),
+        "referral_enabled": settings.get("referral_enabled", True),
+        "whatsapp_template": templates.get("referral_share", ""),
+        "company_name": settings.get("company_name", "ART JUNKIE"),
+    }
+
+
+@api.get("/client/referrals")
+async def client_list_referrals(customer: dict = Depends(get_current_client)):
+    docs = await db.referrals.find(
+        {"referrer_customer_id": customer["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(200)
+    return docs
+
+
+@api.get("/referrals")
+async def admin_list_referrals(status: Optional[str] = None, user: dict = Depends(get_current_user)):
+    query = {}
+    if status:
+        query["status"] = status
+    docs = await db.referrals.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Enrich with referrer name
+    if docs:
+        ids = list({d["referrer_customer_id"] for d in docs})
+        refs = await db.customers.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(500)
+        by_id = {r["id"]: r for r in refs}
+        for d in docs:
+            r = by_id.get(d["referrer_customer_id"])
+            d["referrer_name"] = r["name"] if r else ""
+            d["referrer_phone"] = r["phone"] if r else ""
+    return docs
+
+
+@api.patch("/referrals/{rid}")
+async def admin_update_referral(rid: str, body: dict, user: dict = Depends(get_current_user)):
+    body.pop("id", None)
+    body["updated_at"] = now_iso()
+    await db.referrals.update_one({"id": rid}, {"$set": body})
+    return await db.referrals.find_one({"id": rid}, {"_id": 0})
+
+
 @api.get("/")
 async def root():
     return {"app": "ART JUNKIE OS", "version": "1.0"}
@@ -759,6 +945,27 @@ app.include_router(api)
 @app.on_event("startup")
 async def startup():
     await seed_all(db)
+    await db.customers.create_index("referral_code")
+    await db.referrals.create_index("referrer_customer_id")
+    await _backfill_referral_codes()
+    # Ensure referral template exists in settings (idempotent)
+    settings_doc = await db.settings.find_one({"id": "singleton"}, {"_id": 0})
+    if settings_doc:
+        templates = settings_doc.get("templates", {}) or {}
+        updates = {}
+        if "referral_share" not in templates:
+            templates["referral_share"] = (
+                "Bună! Am ales ART JUNKIE pentru perdele/draperii/rolete și sunt "
+                "foarte mulțumit(ă). Îți recomand și ție echipa lor — dacă folosești "
+                "linkul meu, primești {discount} discount la prima comandă: {link}"
+            )
+            updates["templates"] = templates
+        if "referral_discount" not in settings_doc:
+            updates["referral_discount"] = "10%"
+        if "referral_enabled" not in settings_doc:
+            updates["referral_enabled"] = True
+        if updates:
+            await db.settings.update_one({"id": "singleton"}, {"$set": updates})
     logger.info("ART JUNKIE OS ready.")
 
 

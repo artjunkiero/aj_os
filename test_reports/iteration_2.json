@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 2 (Referral feature) testing — backend + frontend. Wrote 16 pytest cases in /app/backend/tests/test_referral.py, all PASSED. UI flows validated end-to-end: client login (+40721000001), /client dashboard shows referral card, /client/recomanda shows large code + copy/whatsapp/share buttons + editable message + history, public /refer/{code} shows referrer name & 10% discount, form submits successfully → success screen, admin /admin/recomandari shows 5 KPI cards + rows with status selects, admin /admin/setari shows Program Recomandare card with discount + enabled + template-referral_share, customer detail /admin/clienti/{id} has Recomandări tab and header shows referral code (D2PGZP8Z). Ineligible client (+40721000004) correctly returns eligible=false.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "client/Referrals.jsx", "issue": "Editable message preview only substitutes {link} and {discount} placeholders; {referrer_name} and {code} remain literal in the shared/copied text. This means WhatsApp share message contains raw '{code}' text unless template avoids these tokens.", "selector": "Referrals.jsx L21-23", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_referral.py",
+    "/app/test_reports/pytest/pytest_referral.xml"
+  ],
+  "action_items": [
+    "Update /app/frontend/src/pages/client/Referrals.jsx message substitution to also replace {code} → info.code and {referrer_name} → customer name (available from client-auth/me or referrer). Alternatively, backend can substitute all placeholders before returning whatsapp_template.",
+    "Optional: also apply the same substitution when copying via btn-copy-message and btn-share-whatsapp so the recipient never sees literal {...} tokens."
+  ],
+  "critical_code_review_comments": [
+    "server.py PATCH /api/referrals/{rid} accepts arbitrary dict body without a Pydantic model — consider a StatusUpdate schema to restrict allowed fields (currently caller could set any field on the referral doc).",
+    "server.py _ensure_referral_code uses a random collision retry then falls back to prefix+random digits — good, but the fallback code is 9 chars which breaks the '8-char' invariant advertised. Minor.",
+    "Public POST /refer/{code} does not rate-limit — a malicious actor could spam customer/lead creation. Consider IP or code-based throttling.",
+    "server.py refer_submit uses variable name 'ref' twice (line 806 for referrer lookup result & line 859 for Referral instance) — no bug but confusing shadowing.",
+    "Frontend Refer.jsx: no phone-format validation before submit; backend accepts any non-empty string."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_referral.py (new)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% (all critical selectors present, flows work)"},
+  "test_credentials": "Admin: admin@artjunkie.ro / ArtJunkie123!  |  Client eligible: +40721000001 (OTP via demo_code)  |  Client ineligible: +40721000004",
+  "seed_data_creation": "None persistent — all TEST_ customers/leads created during tests are cleaned up. Referral rows have no DELETE endpoint, so ~2 TEST rows may remain in db.referrals (harmless, referrer_customer_id points to real client).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iteration 2 referral endpoints verified. If main agent fixes the message-template placeholder substitution issue, re-run only /client/recomanda UI check to confirm {code} and {referrer_name} are properly substituted in the visible message preview.",
+  "rca of the issue": "Message template placeholder substitution: In /app/frontend/src/pages/client/Referrals.jsx lines 21-23, only {link} and {discount} are chained via .replace(). The seed template stored in settings.templates.referral_share references {code} and {referrer_name} tokens as well, and those remain unsubstituted in the visible/copied message. Fix: add .replace('{code}', info.code || '').replace('{referrer_name}', customerName || '') where customerName comes from client-auth/me."
+}
