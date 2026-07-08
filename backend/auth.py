@@ -91,9 +91,9 @@ def set_client_cookie(response, token: str):
     response.set_cookie(
         key="client_token",
         value=token,
+        httponly=True,
         secure=True,
     samesite="none",
-        samesite="lax",
         max_age=2592000,
         path="/",
     )
