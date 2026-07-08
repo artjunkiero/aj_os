@@ -64,8 +64,8 @@ def set_auth_cookies(response, access_token: str, refresh_token: str | None = No
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=True,
+    samesite="none",
         max_age=43200,
         path="/",
     )
@@ -74,8 +74,8 @@ def set_auth_cookies(response, access_token: str, refresh_token: str | None = No
             key="refresh_token",
             value=refresh_token,
             httponly=True,
-            secure=False,
-            samesite="lax",
+            secure=True,
+    samesite="none",
             max_age=604800,
             path="/",
         )
@@ -91,8 +91,8 @@ def set_client_cookie(response, token: str):
     response.set_cookie(
         key="client_token",
         value=token,
-        httponly=True,
-        secure=False,
+        secure=True,
+    samesite="none",
         samesite="lax",
         max_age=2592000,
         path="/",
