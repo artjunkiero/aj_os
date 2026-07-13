@@ -111,10 +111,7 @@ export default function LoginPage({ variant = "admin" }) {
             <Link to="/client/login" className="text-aj-navy hover:text-aj-gold font-semibold" data-testid="link-client-portal">
               Portal client →
             </Link>
-            <div className="mt-3 text-xs text-slate-500 leading-relaxed">
-              Demo: <span className="font-mono">admin@artjunkie.ro</span> / <span className="font-mono">ArtJunkie123!</span>
             </div>
-          </div>
         </div>
       </div>
     </div>
