@@ -46,7 +46,6 @@ from notifications import (
     create_internal_notification,
     render_template,
 )
-)
 from seed import seed_all
 
 logging.basicConfig(level=logging.INFO,
