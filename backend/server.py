@@ -309,19 +309,75 @@ async def list_measurements(assigned_to: Optional[str] = None, status: Optional[
 
 
 @api.post("/measurements")
-async def create_measurement(body: MeasurementBase, user: dict = Depends(get_current_user)):
+async def create_measurement(
+    body: MeasurementBase,
+    user: dict = Depends(get_current_user),
+):
     m = Measurement(**body.model_dump())
-    await db.measurements.insert_one(m.model_dump())
-    # Notify assigned employee if any
-    if m.assigned_to:
-        customer = await db.customers.find_one({"id": m.customer_id}, {"_id": 0})
-        cust_name = customer.get("name", "") if customer else ""
-        await create_internal_notification(
-            db, user_id=m.assigned_to, customer_id=m.customer_id, kind="allocation",
-            title="Măsurătoare alocată",
-            body=f"Client: {cust_name}, {m.date} {m.time}",
+    measurement_data = m.model_dump()
+
+    await db.measurements.insert_one(measurement_data)
+
+    customer = await db.customers.find_one(
+        {"id": m.customer_id},
+        {"_id": 0},
+    )
+
+    whatsapp_result = None
+
+    if customer:
+        customer_name = customer.get("name", "").strip() or "client ART JUNKIE"
+        customer_phone = customer.get("phone", "").strip()
+
+        measurement_address = (
+            getattr(m, "address", None)
+            or customer.get("address", "")
+            or "Adresa stabilită cu echipa ART JUNKIE"
         )
-    return m.model_dump()
+
+        if customer_phone:
+            whatsapp_result = await send_whatsapp_template(
+                phone=customer_phone,
+                template_name="programare_masuratoare",
+                language_code="ro",
+                parameters=[
+                    customer_name,
+                    str(m.date),
+                    str(m.time),
+                    measurement_address,
+                ],
+            )
+
+            await create_internal_notification(
+                db,
+                customer_id=m.customer_id,
+                kind="info",
+                title="Notificare WhatsApp",
+                body=(
+                    f"Mesajul pentru programarea măsurătorii a fost trimis "
+                    f către {customer_name}. "
+                    f"Status: {whatsapp_result.get('status', 'necunoscut')}"
+                ),
+                channel="whatsapp",
+            )
+
+    # Notificare internă pentru angajatul alocat
+    if m.assigned_to:
+        customer_name = customer.get("name", "") if customer else ""
+
+        await create_internal_notification(
+            db,
+            user_id=m.assigned_to,
+            customer_id=m.customer_id,
+            kind="allocation",
+            title="Măsurătoare alocată",
+            body=f"Client: {customer_name}, {m.date} {m.time}",
+        )
+
+    return {
+        **measurement_data,
+        "whatsapp": whatsapp_result,
+    }
 
 
 @api.patch("/measurements/{mid}")
