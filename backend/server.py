@@ -355,7 +355,10 @@ async def create_measurement(
                 title="Notificare WhatsApp",
                 body=(
                     f"Mesajul pentru programarea măsurătorii a fost trimis "
-                    f către {customer_name}. "
+                    body=(
+    f"Mesajul pentru programarea măsurătorii a fost trimis "
+    f"către {customer_name}. "
+    f"Status: {whatsapp_result.get('status', 'necunoscut')}"
                     f"Status: {whatsapp_result.get('status', 'necunoscut')}"
                 ),
                 channel="whatsapp",
