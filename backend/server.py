@@ -39,8 +39,13 @@ from auth import (
     get_current_user, require_roles, get_current_client,
 )
 from notifications import (
-    send_whatsapp_message, send_push_notification, send_email_notification,
-    create_internal_notification, render_template,
+    send_whatsapp_message,
+    send_whatsapp_template,
+    send_push_notification,
+    send_email_notification,
+    create_internal_notification,
+    render_template,
+)
 )
 from seed import seed_all
 
@@ -112,7 +117,9 @@ async def _backfill_referral_codes():
 class LoginBody(BaseModel):
     email: str
     password: str
-
+    
+class WhatsAppTestRequest(BaseModel):
+    phone: str
 
 @api.post("/auth/login")
 async def login(body: LoginBody, response: Response):
@@ -140,6 +147,15 @@ async def logout(response: Response):
 async def me(user: dict = Depends(get_current_user)):
     return user
 
+@api.post("/test/whatsapp")
+async def test_whatsapp(body: WhatsAppTestRequest):
+    result = await send_whatsapp_template(
+        phone=body.phone,
+        template_name="hello_world",
+        language_code="en_US",
+    )
+
+    return result
 
 # ============ USERS / EMPLOYEES ============
 @api.get("/users")
