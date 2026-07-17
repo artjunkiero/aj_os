@@ -326,7 +326,11 @@ async def create_measurement(
     whatsapp_result = None
 
     if customer:
-        customer_name = customer.get("name", "").strip() or "client ART JUNKIE"
+        customer_name = (
+            customer.get("name", "").strip()
+            or "client ART JUNKIE"
+        )
+
         customer_phone = customer.get("phone", "").strip()
 
         measurement_address = (
@@ -354,19 +358,19 @@ async def create_measurement(
                 kind="info",
                 title="Notificare WhatsApp",
                 body=(
-                    f"Mesajul pentru programarea măsurătorii a fost trimis "
-                    body=(
-    f"Mesajul pentru programarea măsurătorii a fost trimis "
-    f"către {customer_name}. "
-    f"Status: {whatsapp_result.get('status', 'necunoscut')}"
+                    "Mesajul pentru programarea măsurătorii a fost trimis "
+                    f"către {customer_name}. "
                     f"Status: {whatsapp_result.get('status', 'necunoscut')}"
                 ),
                 channel="whatsapp",
             )
 
-    # Notificare internă pentru angajatul alocat
     if m.assigned_to:
-        customer_name = customer.get("name", "") if customer else ""
+        assigned_customer_name = (
+            customer.get("name", "")
+            if customer
+            else ""
+        )
 
         await create_internal_notification(
             db,
@@ -374,7 +378,10 @@ async def create_measurement(
             customer_id=m.customer_id,
             kind="allocation",
             title="Măsurătoare alocată",
-            body=f"Client: {customer_name}, {m.date} {m.time}",
+            body=(
+                f"Client: {assigned_customer_name}, "
+                f"{m.date} {m.time}"
+            ),
         )
 
     return {
