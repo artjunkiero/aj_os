@@ -155,21 +155,6 @@ async def send_whatsapp_template(
     parameters: list[str] | None = None,
     button_code: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Trimite un template WhatsApp aprobat de Meta.
-
-    Exemplu:
-        await send_whatsapp_template(
-            phone="0737334097",
-            template_name="confirmare_masuratoare",
-            language_code="ro",
-            parameters=[
-                "Bogdan",
-                "20 iulie 2026",
-                "14:00",
-            ],
-        )
-    """
     token = os.environ.get("WHATSAPP_ACCESS_TOKEN", "").strip()
     phone_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "").strip()
     api_version = os.environ.get("WHATSAPP_API_VERSION", "v25.0").strip()
@@ -180,7 +165,6 @@ async def send_whatsapp_template(
             phone,
             template_name,
         )
-
         return {
             "status": "pending",
             "reason": "missing_keys",
@@ -209,20 +193,22 @@ async def send_whatsapp_template(
                 ],
             }
         )
-if button_code:
-    components.append(
-        {
-            "type": "button",
-            "sub_type": "url",
-            "index": "0",
-            "parameters": [
-                {
-                    "type": "text",
-                    "text": str(button_code),
-                }
-            ],
-        }
-    )
+
+    if button_code:
+        components.append(
+            {
+                "type": "button",
+                "sub_type": "url",
+                "index": "0",
+                "parameters": [
+                    {
+                        "type": "text",
+                        "text": str(button_code),
+                    }
+                ],
+            }
+        )
+
     payload = {
         "messaging_product": "whatsapp",
         "to": recipient,
@@ -297,7 +283,6 @@ if button_code:
             "[WhatsApp TEMPLATE TIMEOUT] to=%s",
             recipient,
         )
-
         return {
             "status": "failed",
             "reason": "timeout",
@@ -308,7 +293,6 @@ if button_code:
             "[WhatsApp TEMPLATE HTTP ERROR] to=%s",
             recipient,
         )
-
         return {
             "status": "failed",
             "reason": "http_error",
@@ -320,7 +304,6 @@ if button_code:
             "[WhatsApp TEMPLATE ERROR] to=%s",
             recipient,
         )
-
         return {
             "status": "failed",
             "reason": "unexpected_error",
