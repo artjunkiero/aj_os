@@ -153,6 +153,7 @@ async def send_whatsapp_template(
     template_name: str,
     language_code: str = "ro",
     parameters: list[str] | None = None,
+    button_code: str | None = None,
 ) -> dict[str, Any]:
     """
     Trimite un template WhatsApp aprobat de Meta.
@@ -208,7 +209,20 @@ async def send_whatsapp_template(
                 ],
             }
         )
-
+if button_code:
+    components.append(
+        {
+            "type": "button",
+            "sub_type": "url",
+            "index": "0",
+            "parameters": [
+                {
+                    "type": "text",
+                    "text": str(button_code),
+                }
+            ],
+        }
+    )
     payload = {
         "messaging_product": "whatsapp",
         "to": recipient,
