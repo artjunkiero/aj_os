@@ -756,19 +756,6 @@ async def client_request_otp(body: OtpRequest):
             detail="Nu găsim un cont client cu acest număr",
         )
 
-    # Invalidează codurile OTP anterioare nefolosite
-    await db.otp_codes.update_many(
-        {
-            "phone": phone,
-            "used": False,
-        },
-        {
-            "$set": {
-                "used": True,
-            }
-        },
-    )
-
     code = "".join(random.choices(string.digits, k=6))
 
     expires = (
@@ -781,37 +768,23 @@ async def client_request_otp(body: OtpRequest):
         expires_at=expires,
     )
 
-    # Folosim copy() pentru a evita adăugarea lui _id în obiectul local
-    await db.otp_codes.insert_one(otp.model_dump().copy())
+    await db.otp_codes.insert_one(
+        otp.model_dump().copy()
+    )
 
-    whatsapp_result = await send_whatsapp_otp_template(
+    whatsapp_result = await send_whatsapp_template(
         phone=phone,
-        code=code,
+        template_name="portal_otp",
+        language_code="ro",
+        parameters=[code],
+        button_code=code,
     )
 
     if whatsapp_result.get("status") != "sent":
-        logger.error(
-            "OTP WhatsApp failed for %s: %s",
-            phone,
-            whatsapp_result,
-        )
-
-        # Invalidează codul care nu a putut fi livrat
-        await db.otp_codes.update_one(
-            {"id": otp.id},
-            {"$set": {"used": True}},
-        )
-
         raise HTTPException(
             status_code=502,
             detail="Codul nu a putut fi trimis prin WhatsApp.",
         )
-
-    logger.info(
-        "[OTP WHATSAPP SENT] customer_id=%s phone=%s",
-        customer.get("id"),
-        phone,
-    )
 
     return {
         "ok": True,
