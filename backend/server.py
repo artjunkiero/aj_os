@@ -738,19 +738,86 @@ class OtpVerify(BaseModel):
 @api.post("/client-auth/request-otp")
 async def client_request_otp(body: OtpRequest):
     phone = body.phone.strip()
+
     if not phone:
-        raise HTTPException(status_code=400, detail="Telefon obligatoriu")
-    customer = await db.customers.find_one({"phone": phone}, {"_id": 0})
+        raise HTTPException(
+            status_code=400,
+            detail="Telefon obligatoriu",
+        )
+
+    customer = await db.customers.find_one(
+        {"phone": phone},
+        {"_id": 0},
+    )
+
     if not customer:
-        raise HTTPException(status_code=404, detail="Nu găsim un cont client cu acest număr")
+        raise HTTPException(
+            status_code=404,
+            detail="Nu găsim un cont client cu acest număr",
+        )
+
+    # Invalidează codurile OTP anterioare nefolosite
+    await db.otp_codes.update_many(
+        {
+            "phone": phone,
+            "used": False,
+        },
+        {
+            "$set": {
+                "used": True,
+            }
+        },
+    )
+
     code = "".join(random.choices(string.digits, k=6))
-    expires = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
-    otp = OtpCode(phone=phone, code=code, expires_at=expires)
-    await db.otp_codes.insert_one(otp.model_dump())
-    # In production: send via WhatsApp/SMS. In demo: expose code
-    await send_whatsapp_message(phone, f"Codul tău ART JUNKIE este: {code}")
-    logger.info(f"[OTP DEMO] {phone} -> {code}")
-    return {"ok": True, "demo_code": code}  # Demo only
+
+    expires = (
+        datetime.now(timezone.utc) + timedelta(minutes=10)
+    ).isoformat()
+
+    otp = OtpCode(
+        phone=phone,
+        code=code,
+        expires_at=expires,
+    )
+
+    # Folosim copy() pentru a evita adăugarea lui _id în obiectul local
+    await db.otp_codes.insert_one(otp.model_dump().copy())
+
+    whatsapp_result = await send_whatsapp_otp_template(
+        phone=phone,
+        code=code,
+    )
+
+    if whatsapp_result.get("status") != "sent":
+        logger.error(
+            "OTP WhatsApp failed for %s: %s",
+            phone,
+            whatsapp_result,
+        )
+
+        # Invalidează codul care nu a putut fi livrat
+        await db.otp_codes.update_one(
+            {"id": otp.id},
+            {"$set": {"used": True}},
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail="Codul nu a putut fi trimis prin WhatsApp.",
+        )
+
+    logger.info(
+        "[OTP WHATSAPP SENT] customer_id=%s phone=%s",
+        customer.get("id"),
+        phone,
+    )
+
+    return {
+        "ok": True,
+        "message": "Codul a fost trimis prin WhatsApp.",
+        "expires_in": 600,
+    }
 
 
 @api.post("/client-auth/verify-otp")
