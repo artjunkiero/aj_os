@@ -316,7 +316,8 @@ async def create_measurement(
     m = Measurement(**body.model_dump())
     measurement_data = m.model_dump()
 
-    await db.measurements.insert_one(measurement_data)
+    # Folosim o copie, ca MongoDB să nu adauge _id în obiectul returnat
+    await db.measurements.insert_one(measurement_data.copy())
 
     customer = await db.customers.find_one(
         {"id": m.customer_id},
@@ -352,6 +353,7 @@ async def create_measurement(
                 ],
             )
 
+            # Fără channel="whatsapp"
             await create_internal_notification(
                 db,
                 customer_id=m.customer_id,
@@ -362,7 +364,6 @@ async def create_measurement(
                     f"către {customer_name}. "
                     f"Status: {whatsapp_result.get('status', 'necunoscut')}"
                 ),
-                channel="whatsapp",
             )
 
     if m.assigned_to:
