@@ -326,7 +326,7 @@ async def create_measurement(
 
     whatsapp_result = None
 
-    if customer:
+        if customer:
         customer_name = (
             customer.get("name", "").strip()
             or "client ART JUNKIE"
@@ -341,17 +341,17 @@ async def create_measurement(
         )
 
         if customer_phone:
-           whatsapp_result = await send_whatsapp_template(
-    phone=customer["phone"],
-    template_name="programare_montaj",
-    language_code="ro",
-    parameters=[
-        customer.get("name", "Client"),
-        str(inst.date),
-        str(inst.time),
-        ...,  # adresa
-    ],
-)
+            whatsapp_result = await send_whatsapp_template(
+                phone=customer_phone,
+                template_name="programare_masuratoare",
+                language_code="ro",
+                parameters=[
+                    customer_name,
+                    str(m.date),
+                    str(m.time),
+                    str(measurement_address),
+                ],
+            )
 
             # Fără channel="whatsapp"
             await create_internal_notification(
