@@ -838,9 +838,9 @@ class OtpVerify(BaseModel):
     code: str
 
 
-@api.post("/client-auth/request-otp")
-async def client_request_otp(body: OtpRequest):
-phone = body.phone.strip().replace(" ", "").replace("-", "")
+@api.post("/client-auth/verify-otp")
+async def client_verify_otp(body: OtpVerify, response: Response):
+    phone = normalize_client_phone(body.phone)
 
 # Acceptă:
 # 0744xxxxxx
