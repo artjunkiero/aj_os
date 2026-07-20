@@ -840,7 +840,28 @@ class OtpVerify(BaseModel):
 
 @api.post("/client-auth/request-otp")
 async def client_request_otp(body: OtpRequest):
-    phone = body.phone.strip()
+phone = body.phone.strip().replace(" ", "").replace("-", "")
+
+# Acceptă:
+# 0744xxxxxx
+# 744xxxxxx
+# +40744xxxxxx
+# 40744xxxxxx
+
+if phone.startswith("+40"):
+    phone = phone[1:]
+
+if len(phone) == 10 and phone.startswith("0"):
+    phone = "40" + phone[1:]
+
+elif len(phone) == 9:
+    phone = "40" + phone
+
+elif not phone.startswith("40"):
+    raise HTTPException(
+        status_code=400,
+        detail="Număr de telefon invalid",
+    )
 
     if not phone:
         raise HTTPException(
@@ -898,7 +919,28 @@ async def client_request_otp(body: OtpRequest):
 
 @api.post("/client-auth/verify-otp")
 async def client_verify_otp(body: OtpVerify, response: Response):
-    phone = body.phone.strip()
+phone = body.phone.strip().replace(" ", "").replace("-", "")
+
+# Acceptă:
+# 0744xxxxxx
+# 744xxxxxx
+# +40744xxxxxx
+# 40744xxxxxx
+
+if phone.startswith("+40"):
+    phone = phone[1:]
+
+if len(phone) == 10 and phone.startswith("0"):
+    phone = "40" + phone[1:]
+
+elif len(phone) == 9:
+    phone = "40" + phone
+
+elif not phone.startswith("40"):
+    raise HTTPException(
+        status_code=400,
+        detail="Număr de telefon invalid",
+    )
     now = datetime.now(timezone.utc).isoformat()
     otp = await db.otp_codes.find_one({
         "phone": phone, "code": body.code, "used": False,
