@@ -462,17 +462,17 @@ async def create_installation(
 
     # Notificare WhatsApp către client
     if customer and customer.get("phone"):
-        whatsapp_result = await send_whatsapp_template(
-            phone=customer["phone"],
-            template_name="programare_montaj",
-            language_code="ro",
-            parameters=[
-                customer.get("name", "Client"),
-                str(inst.date),
-                str(inst.time),
-            ],
-        )
-
+ whatsapp_result = await send_whatsapp_template(
+    phone=customer["phone"],
+    template_name="programare_montaj",
+    language_code="ro",
+    parameters=[
+        customer.get("name", "Client"),
+        str(inst.date),
+        str(inst.time),
+        inst.address,          # sau doc.get("address", "")
+    ],
+)
         if whatsapp_result.get("status") != "sent":
             logger.error(
                 "WhatsApp montaj failed customer_id=%s result=%s",
