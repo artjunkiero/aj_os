@@ -462,17 +462,24 @@ async def create_installation(
 
     # Notificare WhatsApp către client
     if customer and customer.get("phone"):
- whatsapp_result = await send_whatsapp_template(
-    phone=customer["phone"],
-    template_name="programare_montaj",
-    language_code="ro",
-    parameters=[
-        customer.get("name", "Client"),
-        str(inst.date),
-        str(inst.time),
-        inst.address,          # sau doc.get("address", "")
-    ],
-)
+        installation_address = (
+            getattr(inst, "address", None)
+            or customer.get("address")
+            or "Adresa comunicată la programare"
+        )
+
+        whatsapp_result = await send_whatsapp_template(
+            phone=customer["phone"],
+            template_name="programare_montaj",
+            language_code="ro",
+            parameters=[
+                customer.get("name", "Client"),
+                str(inst.date),
+                str(inst.time),
+                str(installation_address),
+            ],
+        )
+
         if whatsapp_result.get("status") != "sent":
             logger.error(
                 "WhatsApp montaj failed customer_id=%s result=%s",
@@ -508,14 +515,24 @@ async def update_installation(
             detail="Montaj inexistent",
         )
 
-    # Trimite WhatsApp dacă s-au modificat data sau ora
-    if "date" in body or "time" in body:
+    # Trimite WhatsApp dacă s-au modificat data, ora sau adresa
+    if (
+        "date" in body
+        or "time" in body
+        or "address" in body
+    ):
         customer = await db.customers.find_one(
             {"id": doc["customer_id"]},
             {"_id": 0},
         )
 
         if customer and customer.get("phone"):
+            installation_address = (
+                doc.get("address")
+                or customer.get("address")
+                or "Adresa comunicată la programare"
+            )
+
             whatsapp_result = await send_whatsapp_template(
                 phone=customer["phone"],
                 template_name="programare_montaj",
@@ -524,6 +541,7 @@ async def update_installation(
                     customer.get("name", "Client"),
                     str(doc.get("date", "")),
                     str(doc.get("time", "")),
+                    str(installation_address),
                 ],
             )
 
@@ -535,7 +553,10 @@ async def update_installation(
                 )
 
     # Activează automat garanția la finalizare
-    if body.get("status") == "finalizat" and body.get("warranty_activated"):
+    if (
+        body.get("status") == "finalizat"
+        and body.get("warranty_activated")
+    ):
         existing_w = await db.warranties.find_one(
             {"installation_id": iid}
         )
@@ -570,7 +591,6 @@ async def update_installation(
             )
 
     return doc
-
 
 @api.delete("/installations/{iid}")
 async def delete_installation(iid: str, user: dict = Depends(get_current_user)):
