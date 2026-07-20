@@ -484,28 +484,91 @@ async def create_installation(
 
 
 @api.patch("/installations/{iid}")
-async def update_installation(iid: str, body: dict, user: dict = Depends(get_current_user)):
+async def update_installation(
+    iid: str,
+    body: dict,
+    user: dict = Depends(get_current_user),
+):
     body.pop("id", None)
     body["updated_at"] = now_iso()
-    await db.installations.update_one({"id": iid}, {"$set": body})
-    doc = await db.installations.find_one({"id": iid}, {"_id": 0})
-    # Auto-activate warranty when finalized
+
+    await db.installations.update_one(
+        {"id": iid},
+        {"$set": body},
+    )
+
+    doc = await db.installations.find_one(
+        {"id": iid},
+        {"_id": 0},
+    )
+
+    if not doc:
+        raise HTTPException(
+            status_code=404,
+            detail="Montaj inexistent",
+        )
+
+    # Trimite WhatsApp dacă s-au modificat data sau ora
+    if "date" in body or "time" in body:
+        customer = await db.customers.find_one(
+            {"id": doc["customer_id"]},
+            {"_id": 0},
+        )
+
+        if customer and customer.get("phone"):
+            whatsapp_result = await send_whatsapp_template(
+                phone=customer["phone"],
+                template_name="programare_montaj",
+                language_code="ro",
+                parameters=[
+                    customer.get("name", "Client"),
+                    str(doc.get("date", "")),
+                    str(doc.get("time", "")),
+                ],
+            )
+
+            if whatsapp_result.get("status") != "sent":
+                logger.error(
+                    "WhatsApp montaj failed customer_id=%s result=%s",
+                    doc["customer_id"],
+                    whatsapp_result,
+                )
+
+    # Activează automat garanția la finalizare
     if body.get("status") == "finalizat" and body.get("warranty_activated"):
-        # Warranty may already exist
-        existing_w = await db.warranties.find_one({"installation_id": iid})
+        existing_w = await db.warranties.find_one(
+            {"installation_id": iid}
+        )
+
         if not existing_w:
-            settings = await db.settings.find_one({"id": "singleton"}) or {}
-            months = settings.get("default_warranty_months", 24)
+            settings = await db.settings.find_one(
+                {"id": "singleton"}
+            ) or {}
+
+            months = settings.get(
+                "default_warranty_months",
+                24,
+            )
+
             today = datetime.now(timezone.utc).date()
+
             w = Warranty(
-                customer_id=doc["customer_id"], work_order_id=doc.get("work_order_id", ""),
-                installation_id=iid, product=", ".join(doc.get("products", [])),
+                customer_id=doc["customer_id"],
+                work_order_id=doc.get("work_order_id", ""),
+                installation_id=iid,
+                product=", ".join(doc.get("products", [])),
                 installation_date=today.isoformat(),
                 duration_months=months,
-                expiry_date=(today + timedelta(days=30 * months)).isoformat(),
+                expiry_date=(
+                    today + timedelta(days=30 * months)
+                ).isoformat(),
                 status="activa",
             )
-            await db.warranties.insert_one(w.model_dump())
+
+            await db.warranties.insert_one(
+                w.model_dump().copy()
+            )
+
     return doc
 
 
