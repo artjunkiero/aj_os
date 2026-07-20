@@ -430,16 +430,56 @@ async def list_installations(assigned_to: Optional[str] = None, status: Optional
 
 
 @api.post("/installations")
-async def create_installation(body: InstallationBase, user: dict = Depends(get_current_user)):
+async def create_installation(
+    body: InstallationBase,
+    user: dict = Depends(get_current_user),
+):
     inst = Installation(**body.model_dump())
-    await db.installations.insert_one(inst.model_dump())
+
+    await db.installations.insert_one(
+        inst.model_dump().copy()
+    )
+
+    customer = await db.customers.find_one(
+        {"id": inst.customer_id},
+        {"_id": 0},
+    )
+
+    # Notificare internă pentru montator
     if inst.assigned_to:
-        customer = await db.customers.find_one({"id": inst.customer_id}, {"_id": 0})
         await create_internal_notification(
-            db, user_id=inst.assigned_to, customer_id=inst.customer_id, kind="allocation",
+            db,
+            user_id=inst.assigned_to,
+            customer_id=inst.customer_id,
+            kind="allocation",
             title="Montaj alocat",
-            body=f"Client: {customer.get('name','') if customer else ''}, {inst.date} {inst.time}",
+            body=(
+                f"Client: "
+                f"{customer.get('name', '') if customer else ''}, "
+                f"{inst.date} {inst.time}"
+            ),
         )
+
+    # Notificare WhatsApp către client
+    if customer and customer.get("phone"):
+        whatsapp_result = await send_whatsapp_template(
+            phone=customer["phone"],
+            template_name="programare_montaj",
+            language_code="ro",
+            parameters=[
+                customer.get("name", "Client"),
+                str(inst.date),
+                str(inst.time),
+            ],
+        )
+
+        if whatsapp_result.get("status") != "sent":
+            logger.error(
+                "WhatsApp montaj failed customer_id=%s result=%s",
+                inst.customer_id,
+                whatsapp_result,
+            )
+
     return inst.model_dump()
 
 
