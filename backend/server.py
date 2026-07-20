@@ -317,7 +317,9 @@ async def create_measurement(
     measurement_data = m.model_dump()
 
     # Folosim o copie, ca MongoDB să nu adauge _id în obiectul returnat
-    await db.measurements.insert_one(measurement_data.copy())
+    await db.measurements.insert_one(
+        measurement_data.copy()
+    )
 
     customer = await db.customers.find_one(
         {"id": m.customer_id},
@@ -326,13 +328,15 @@ async def create_measurement(
 
     whatsapp_result = None
 
-        if customer:
+    if customer:
         customer_name = (
             customer.get("name", "").strip()
             or "client ART JUNKIE"
         )
 
-        customer_phone = customer.get("phone", "").strip()
+        customer_phone = (
+            customer.get("phone", "").strip()
+        )
 
         measurement_address = (
             getattr(m, "address", None)
@@ -353,7 +357,6 @@ async def create_measurement(
                 ],
             )
 
-            # Fără channel="whatsapp"
             await create_internal_notification(
                 db,
                 customer_id=m.customer_id,
@@ -362,7 +365,8 @@ async def create_measurement(
                 body=(
                     "Mesajul pentru programarea măsurătorii a fost trimis "
                     f"către {customer_name}. "
-                    f"Status: {whatsapp_result.get('status', 'necunoscut')}"
+                    f"Status: "
+                    f"{whatsapp_result.get('status', 'necunoscut')}"
                 ),
             )
 
@@ -392,27 +396,68 @@ async def create_measurement(
 
 
 @api.patch("/measurements/{mid}")
-async def update_measurement(mid: str, body: dict, user: dict = Depends(get_current_user)):
+async def update_measurement(
+    mid: str,
+    body: dict,
+    user: dict = Depends(get_current_user),
+):
     body.pop("id", None)
     body["updated_at"] = now_iso()
-    prev = await db.measurements.find_one({"id": mid}, {"_id": 0})
-    await db.measurements.update_one({"id": mid}, {"$set": body})
-    doc = await db.measurements.find_one({"id": mid}, {"_id": 0})
-    # notify on allocation change
-    if prev and body.get("assigned_to") and prev.get("assigned_to") != body["assigned_to"]:
-        await create_internal_notification(
-            db, user_id=body["assigned_to"], customer_id=doc["customer_id"],
-            kind="allocation", title="Măsurătoare alocată",
-            body=f"{doc.get('date','')} {doc.get('time','')}",
+
+    prev = await db.measurements.find_one(
+        {"id": mid},
+        {"_id": 0},
+    )
+
+    await db.measurements.update_one(
+        {"id": mid},
+        {"$set": body},
+    )
+
+    doc = await db.measurements.find_one(
+        {"id": mid},
+        {"_id": 0},
+    )
+
+    if not doc:
+        raise HTTPException(
+            status_code=404,
+            detail="Măsurătoare inexistentă",
         )
+
+    # Notificare dacă s-a schimbat montatorul alocat
+    if (
+        prev
+        and body.get("assigned_to")
+        and prev.get("assigned_to") != body["assigned_to"]
+    ):
+        await create_internal_notification(
+            db,
+            user_id=body["assigned_to"],
+            customer_id=doc["customer_id"],
+            kind="allocation",
+            title="Măsurătoare alocată",
+            body=(
+                f"{doc.get('date', '')} "
+                f"{doc.get('time', '')}"
+            ),
+        )
+
     return doc
 
 
 @api.delete("/measurements/{mid}")
-async def delete_measurement(mid: str, user: dict = Depends(get_current_user)):
-    await db.measurements.delete_one({"id": mid})
-    return {"ok": True}
+async def delete_measurement(
+    mid: str,
+    user: dict = Depends(get_current_user),
+):
+    await db.measurements.delete_one(
+        {"id": mid}
+    )
 
+    return {
+        "ok": True,
+    }
 
 # ============ INSTALLATIONS ============
 @api.get("/installations")
