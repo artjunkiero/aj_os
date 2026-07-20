@@ -838,29 +838,13 @@ class OtpVerify(BaseModel):
     code: str
 
 
-@api.post("/client-auth/verify-otp")
-async def client_verify_otp(body: OtpVerify, response: Response):
-    phone = normalize_client_phone(body.phone)
-
-# Acceptă:
-# 0744xxxxxx
-# 744xxxxxx
-# +40744xxxxxx
-# 40744xxxxxx
-
-if phone.startswith("+40"):
-    phone = phone[1:]
-
-if len(phone) == 10 and phone.startswith("0"):
-    phone = "40" + phone[1:]
-
-elif len(phone) == 9:
-    phone = "40" + phone
-
-elif not phone.startswith("40"):
-    raise HTTPException(
-        status_code=400,
-        detail="Număr de telefon invalid",
+def normalize_client_phone(phone: str) -> str:
+    phone = (
+        phone.strip()
+        .replace(" ", "")
+        .replace("-", "")
+        .replace("(", "")
+        .replace(")", "")
     )
 
     if not phone:
@@ -868,6 +852,36 @@ elif not phone.startswith("40"):
             status_code=400,
             detail="Telefon obligatoriu",
         )
+
+    # Acceptă +40744xxxxxx
+    if phone.startswith("+40"):
+        phone = phone[1:]
+
+    # Acceptă 0744xxxxxx și transformă în 40744xxxxxx
+    if len(phone) == 10 and phone.startswith("0"):
+        phone = "40" + phone[1:]
+
+    # Acceptă 744xxxxxx și transformă în 40744xxxxxx
+    elif len(phone) == 9:
+        phone = "40" + phone
+
+    # Formatul final trebuie să fie 40744xxxxxx
+    if (
+        not phone.isdigit()
+        or len(phone) != 11
+        or not phone.startswith("40")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Număr de telefon invalid",
+        )
+
+    return phone
+
+
+@api.post("/client-auth/request-otp")
+async def client_request_otp(body: OtpRequest):
+    phone = normalize_client_phone(body.phone)
 
     customer = await db.customers.find_one(
         {"phone": phone},
@@ -880,10 +894,29 @@ elif not phone.startswith("40"):
             detail="Nu găsim un cont client cu acest număr",
         )
 
-    code = "".join(random.choices(string.digits, k=6))
+    # Invalidează codurile OTP anterioare
+    await db.otp_codes.update_many(
+        {
+            "phone": phone,
+            "used": False,
+        },
+        {
+            "$set": {
+                "used": True,
+            }
+        },
+    )
+
+    code = "".join(
+        random.choices(
+            string.digits,
+            k=6,
+        )
+    )
 
     expires = (
-        datetime.now(timezone.utc) + timedelta(minutes=10)
+        datetime.now(timezone.utc)
+        + timedelta(minutes=10)
     ).isoformat()
 
     otp = OtpCode(
@@ -905,10 +938,27 @@ elif not phone.startswith("40"):
     )
 
     if whatsapp_result.get("status") != "sent":
+        logger.error(
+            "WhatsApp OTP failed phone=%s result=%s",
+            phone,
+            whatsapp_result,
+        )
+
+        await db.otp_codes.update_one(
+            {"id": otp.id},
+            {"$set": {"used": True}},
+        )
+
         raise HTTPException(
             status_code=502,
             detail="Codul nu a putut fi trimis prin WhatsApp.",
         )
+
+    logger.info(
+        "[OTP WHATSAPP SENT] customer_id=%s phone=%s",
+        customer.get("id"),
+        phone,
+    )
 
     return {
         "ok": True,
@@ -918,53 +968,87 @@ elif not phone.startswith("40"):
 
 
 @api.post("/client-auth/verify-otp")
-async def client_verify_otp(body: OtpVerify, response: Response):
-phone = body.phone.strip().replace(" ", "").replace("-", "")
+async def client_verify_otp(
+    body: OtpVerify,
+    response: Response,
+):
+    phone = normalize_client_phone(body.phone)
 
-# Acceptă:
-# 0744xxxxxx
-# 744xxxxxx
-# +40744xxxxxx
-# 40744xxxxxx
+    code = body.code.strip()
 
-if phone.startswith("+40"):
-    phone = phone[1:]
+    if not code:
+        raise HTTPException(
+            status_code=400,
+            detail="Cod obligatoriu",
+        )
 
-if len(phone) == 10 and phone.startswith("0"):
-    phone = "40" + phone[1:]
-
-elif len(phone) == 9:
-    phone = "40" + phone
-
-elif not phone.startswith("40"):
-    raise HTTPException(
-        status_code=400,
-        detail="Număr de telefon invalid",
-    )
     now = datetime.now(timezone.utc).isoformat()
-    otp = await db.otp_codes.find_one({
-        "phone": phone, "code": body.code, "used": False,
-        "expires_at": {"$gt": now},
-    })
+
+    otp = await db.otp_codes.find_one(
+        {
+            "phone": phone,
+            "code": code,
+            "used": False,
+            "expires_at": {
+                "$gt": now,
+            },
+        }
+    )
+
     if not otp:
-        raise HTTPException(status_code=400, detail="Cod invalid sau expirat")
-    await db.otp_codes.update_one({"id": otp["id"]}, {"$set": {"used": True}})
-    customer = await db.customers.find_one({"phone": phone}, {"_id": 0})
+        raise HTTPException(
+            status_code=400,
+            detail="Cod invalid sau expirat",
+        )
+
+    customer = await db.customers.find_one(
+        {"phone": phone},
+        {"_id": 0},
+    )
+
     if not customer:
-        raise HTTPException(status_code=404, detail="Client inexistent")
-    token = create_client_token(customer["id"], phone)
-    set_client_cookie(response, token)
-    return {"customer": customer}
+        raise HTTPException(
+            status_code=404,
+            detail="Client inexistent",
+        )
+
+    await db.otp_codes.update_one(
+        {"id": otp["id"]},
+        {
+            "$set": {
+                "used": True,
+            }
+        },
+    )
+
+    token = create_client_token(
+        customer["id"],
+        phone,
+    )
+
+    set_client_cookie(
+        response,
+        token,
+    )
+
+    return {
+        "customer": customer,
+    }
 
 
 @api.post("/client-auth/logout")
 async def client_logout(response: Response):
     clear_auth_cookies(response)
-    return {"ok": True}
+
+    return {
+        "ok": True,
+    }
 
 
 @api.get("/client-auth/me")
-async def client_me(customer: dict = Depends(get_current_client)):
+async def client_me(
+    customer: dict = Depends(get_current_client),
+):
     return customer
 
 
