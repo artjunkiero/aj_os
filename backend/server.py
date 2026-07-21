@@ -948,20 +948,20 @@ def normalize_client_phone(phone: str) -> str:
 async def client_request_otp(body: OtpRequest):
     phone = normalize_client_phone(body.phone)
 
-phone_variants = [
-    phone,             # 40741793014
-    f"+{phone}",       # +40741793014
-    f"0{phone[2:]}",   # 0741793014
-]
+    phone_variants = [
+        phone,
+        f"+{phone}",
+        f"0{phone[2:]}",
+    ]
 
-customer = await db.customers.find_one(
-    {
-        "phone": {
-            "$in": phone_variants,
-        }
-    },
-    {"_id": 0},
-)
+    customer = await db.customers.find_one(
+        {
+            "phone": {
+                "$in": phone_variants,
+            }
+        },
+        {"_id": 0},
+    )
 
     if not customer:
         raise HTTPException(
@@ -1048,7 +1048,6 @@ async def client_verify_otp(
     response: Response,
 ):
     phone = normalize_client_phone(body.phone)
-
     code = body.code.strip()
 
     if not code:
@@ -1077,19 +1076,19 @@ async def client_verify_otp(
         )
 
     phone_variants = [
-    phone,
-    f"+{phone}",
-    f"0{phone[2:]}",
-]
+        phone,
+        f"+{phone}",
+        f"0{phone[2:]}",
+    ]
 
-customer = await db.customers.find_one(
-    {
-        "phone": {
-            "$in": phone_variants,
-        }
-    },
-    {"_id": 0},
-)
+    customer = await db.customers.find_one(
+        {
+            "phone": {
+                "$in": phone_variants,
+            }
+        },
+        {"_id": 0},
+    )
 
     if not customer:
         raise HTTPException(
