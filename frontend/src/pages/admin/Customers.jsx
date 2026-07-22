@@ -4,12 +4,27 @@ import api from "@/lib/api";
 import { toast } from "sonner";
 import { Badge, CUSTOMER_STATUS } from "@/lib/status";
 import Modal, { Field, TextInput, TextArea, Select } from "./_Modal";
-import { Plus, Search, Phone, Mail, MapPin } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Phone,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Pencil,
+  Trash2,
+  Archive
+} from "lucide-react";
+import { useMemo } from "react";
 
 const STATUS_OPTIONS = [
   { value: "", label: "Toate statusurile" },
   ...Object.entries(CUSTOMER_STATUS).map(([v, s]) => ({ value: v, label: s.label })),
 ];
+
+<th className="px-4 py-3 text-right">
+    Acțiuni
+</th>
 
 const SOURCES = [
   "showroom", "telefon", "whatsapp", "site", "google", "facebook", "instagram", "recomandare", "alta"
@@ -42,7 +57,13 @@ export default function AdminCustomers() {
     setRows(data || []);
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+useEffect(() => {
+  const t = setTimeout(() => {
+    load();
+  }, 300);
+
+  return () => clearTimeout(t);
+}, [q, status]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -121,7 +142,65 @@ export default function AdminCustomers() {
                     <div className="flex items-start gap-1"><MapPin size={12} className="mt-0.5" /> <span>{c.address}<br/>{c.city}{c.county ? ", " + c.county : ""}</span></div>
                   </td>
                   <td className="px-4 py-3 text-xs capitalize">{c.source}</td>
-                  <td className="px-4 py-3"><Badge map={CUSTOMER_STATUS} value={c.status} /></td>
+<td className="px-4 py-3">
+    <div className="flex items-center justify-between gap-3">
+
+        <Badge map={CUSTOMER_STATUS} value={c.status} />
+
+        <div
+            className="flex items-center gap-1"
+            onClick={(e) => e.stopPropagation()}
+        >
+
+            <button
+                title="WhatsApp"
+                className="p-2 rounded-lg hover:bg-green-100"
+                onClick={() =>
+                    window.open(
+                        `https://wa.me/${(c.phone || "").replace(/\D/g, "")}`,
+                        "_blank"
+                    )
+                }
+            >
+                <MessageCircle size={16}/>
+            </button>
+
+            <button
+                title="Telefon"
+                className="p-2 rounded-lg hover:bg-slate-100"
+                onClick={() =>
+                    window.location.href = `tel:${c.phone}`
+                }
+            >
+                <Phone size={16}/>
+            </button>
+
+            <button
+                title="Google Maps"
+                className="p-2 rounded-lg hover:bg-slate-100"
+                onClick={() =>
+                    window.open(
+                        `https://maps.google.com/?q=${encodeURIComponent(
+                            `${c.address}, ${c.city}`
+                        )}`,
+                        "_blank"
+                    )
+                }
+            >
+                <MapPin size={16}/>
+            </button>
+
+            <button
+                title="Editează"
+                className="p-2 rounded-lg hover:bg-blue-100"
+            >
+                <Pencil size={16}/>
+            </button>
+
+        </div>
+
+    </div>
+</td>
                 </tr>
               ))}
             </tbody>
