@@ -8,6 +8,8 @@ import {
   MapPin,
   MessageCircle,
   Pencil,
+  Trash2,
+  Archive,
 } from "lucide-react";
 
 import api from "@/lib/api";
@@ -70,6 +72,7 @@ export default function AdminCustomers() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ ...EMPTY });
   const [loading, setLoading] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
 
   const load = async () => {
     try {
@@ -126,15 +129,17 @@ export default function AdminCustomers() {
   };
 
   const closeModal = () => {
-    if (loading) return;
+    if (loading) {
+      return;
+    }
 
     setOpen(false);
     setEditing(null);
     setForm({ ...EMPTY });
   };
 
-  const submit = async (e) => {
-    e.preventDefault();
+  const submit = async (event) => {
+    event.preventDefault();
 
     if (!form.name.trim()) {
       toast.error("Completează numele clientului");
@@ -156,7 +161,10 @@ export default function AdminCustomers() {
       address: form.address.trim(),
       city: form.city.trim(),
       county: form.county.trim(),
-      cui: form.cui.trim(),
+      cui:
+        form.client_type === "firma"
+          ? form.cui.trim()
+          : "",
       notes: form.notes.trim(),
     };
 
@@ -190,14 +198,22 @@ export default function AdminCustomers() {
   };
 
   const openWhatsApp = (customer) => {
-    const phone = (customer.phone || "").replace(/\D/g, "");
+    let phone = (customer.phone || "").replace(/\D/g, "");
 
     if (!phone) {
       toast.error("Clientul nu are număr de telefon");
       return;
     }
 
-    window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer");
+    if (phone.startsWith("0")) {
+      phone = `4${phone}`;
+    }
+
+    window.open(
+      `https://wa.me/${phone}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
   };
 
   const callCustomer = (customer) => {
@@ -223,55 +239,67 @@ export default function AdminCustomers() {
       return;
     }
 
-    const archiveCustomer = async (customer) => {
-  const confirmed = window.confirm(
-    `Arhivezi clientul „${customer.name}”? Clientul va rămâne în sistem și își va păstra istoricul.`
-  );
-
-  if (!confirmed) return;
-
-  try {
-    await api.patch(`/customers/${customer.id}/archive`);
-
-    toast.success("Clientul a fost arhivat");
-    await load();
-  } catch (err) {
-    console.error("Eroare la arhivarea clientului:", err);
-
-    toast.error(
-      err?.response?.data?.detail ||
-        "Nu am putut arhiva clientul"
-    );
-  }
-};
-
-const deleteCustomer = async (customer) => {
-  const confirmed = window.confirm(
-    `Ștergi definitiv clientul „${customer.name}”? Această acțiune nu poate fi anulată.`
-  );
-
-  if (!confirmed) return;
-
-  try {
-    await api.delete(`/customers/${customer.id}`);
-
-    toast.success("Clientul a fost șters definitiv");
-    await load();
-  } catch (err) {
-    console.error("Eroare la ștergerea clientului:", err);
-
-    toast.error(
-      err?.response?.data?.detail ||
-        "Nu am putut șterge clientul"
-    );
-  }
-};
-
     window.open(
       `https://maps.google.com/?q=${encodeURIComponent(location)}`,
       "_blank",
       "noopener,noreferrer"
     );
+  };
+
+  const archiveCustomer = async (customer) => {
+    const confirmed = window.confirm(
+      `Arhivezi clientul „${customer.name}”?\n\nClientul va rămâne în sistem și își va păstra istoricul.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionLoadingId(customer.id);
+
+    try {
+      await api.patch(`/customers/${customer.id}/archive`);
+
+      toast.success("Clientul a fost arhivat");
+      await load();
+    } catch (err) {
+      console.error("Eroare la arhivarea clientului:", err);
+
+      toast.error(
+        err?.response?.data?.detail ||
+          "Nu am putut arhiva clientul"
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const deleteCustomer = async (customer) => {
+    const confirmed = window.confirm(
+      `Ștergi definitiv clientul „${customer.name}”?\n\nAceastă acțiune nu poate fi anulată.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionLoadingId(customer.id);
+
+    try {
+      await api.delete(`/customers/${customer.id}`);
+
+      toast.success("Clientul a fost șters definitiv");
+      await load();
+    } catch (err) {
+      console.error("Eroare la ștergerea clientului:", err);
+
+      toast.error(
+        err?.response?.data?.detail ||
+          "Nu am putut șterge clientul"
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
   return (
@@ -313,13 +341,13 @@ const deleteCustomer = async (customer) => {
             className="aj-input pl-9"
             placeholder="Caută după nume, telefon, email…"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(event) => setQ(event.target.value)}
           />
         </div>
 
         <Select
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          onChange={(event) => setStatus(event.target.value)}
           options={STATUS_OPTIONS}
           className="sm:w-56"
         />
@@ -335,7 +363,9 @@ const deleteCustomer = async (customer) => {
                 <th className="px-4 py-3">Adresă</th>
                 <th className="px-4 py-3">Sursă</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Acțiuni</th>
+                <th className="px-4 py-3 text-right">
+                  Acțiuni
+                </th>
               </tr>
             </thead>
 
@@ -352,132 +382,157 @@ const deleteCustomer = async (customer) => {
                 </tr>
               )}
 
-              {rows.map((customer) => (
-                <tr
-                  key={customer.id}
-                  className="border-t border-aj-line hover:bg-aj-cream/40 cursor-pointer"
-                  onClick={() =>
-                    nav(`/admin/clienti/${customer.id}`)
-                  }
-                  data-testid={`customer-row-${customer.id}`}
-                >
-                  <td className="px-4 py-3">
-                    <div className="font-semibold text-aj-navy">
-                      {customer.name}
-                    </div>
+              {rows.map((customer) => {
+                const isActionLoading =
+                  actionLoadingId === customer.id;
 
-                    <div className="text-xs text-slate-500">
-                      {customer.client_type === "firma"
-                        ? `Firmă · CUI ${customer.cui || "-"}`
-                        : "Persoană fizică"}
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3 text-xs text-slate-600">
-                    <div className="flex items-center gap-1">
-                      <Phone size={12} />
-                      {customer.phone || "-"}
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <Mail size={12} />
-                      {customer.email || "-"}
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3 text-xs text-slate-600">
-                    <div className="flex items-start gap-1">
-                      <MapPin size={12} className="mt-0.5 shrink-0" />
-
-                      <span>
-                        {customer.address || "-"}
-                        <br />
-                        {customer.city || "-"}
-                        {customer.county
-                          ? `, ${customer.county}`
-                          : ""}
-                      </span>
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3 text-xs capitalize">
-                    {customer.source || "-"}
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <Badge
-                      map={CUSTOMER_STATUS}
-                      value={customer.status}
-                    />
-                  </td>
-
-                  <td
-                    className="px-4 py-3"
-                    onClick={(e) => e.stopPropagation()}
+                return (
+                  <tr
+                    key={customer.id}
+                    className="border-t border-aj-line hover:bg-aj-cream/40 cursor-pointer"
+                    onClick={() =>
+                      nav(`/admin/clienti/${customer.id}`)
+                    }
+                    data-testid={`customer-row-${customer.id}`}
                   >
-<div className="flex items-center justify-end gap-1">
-  <button
-    type="button"
-    title="WhatsApp"
-    aria-label={`WhatsApp ${customer.name}`}
-    className="p-2 rounded-lg text-slate-600 hover:text-green-700 hover:bg-green-100 transition-colors"
-    onClick={() => openWhatsApp(customer)}
-  >
-    <MessageCircle size={16} />
-  </button>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-aj-navy">
+                        {customer.name}
+                      </div>
 
-  <button
-    type="button"
-    title="Telefon"
-    aria-label={`Apelează ${customer.name}`}
-    className="p-2 rounded-lg text-slate-600 hover:text-aj-navy hover:bg-slate-100 transition-colors"
-    onClick={() => callCustomer(customer)}
-  >
-    <Phone size={16} />
-  </button>
+                      <div className="text-xs text-slate-500">
+                        {customer.client_type === "firma"
+                          ? `Firmă · CUI ${customer.cui || "-"}`
+                          : "Persoană fizică"}
+                      </div>
+                    </td>
 
-  <button
-    type="button"
-    title="Google Maps"
-    aria-label={`Deschide adresa pentru ${customer.name}`}
-    className="p-2 rounded-lg text-slate-600 hover:text-aj-navy hover:bg-slate-100 transition-colors"
-    onClick={() => openMaps(customer)}
-  >
-    <MapPin size={16} />
-  </button>
+                    <td className="px-4 py-3 text-xs text-slate-600">
+                      <div className="flex items-center gap-1">
+                        <Phone size={12} />
+                        {customer.phone || "-"}
+                      </div>
 
-  <button
-    type="button"
-    title="Editează"
-    aria-label={`Editează ${customer.name}`}
-    className="p-2 rounded-lg text-slate-600 hover:text-blue-700 hover:bg-blue-100 transition-colors"
-    onClick={() => openEditModal(customer)}
-  >
-    <Pencil size={16} />
-  </button>
+                      <div className="flex items-center gap-1">
+                        <Mail size={12} />
+                        {customer.email || "-"}
+                      </div>
+                    </td>
 
-  {customer.status !== "arhivat" && (
-    <button
-      type="button"
-      title="Arhivează"
-      aria-label={`Arhivează ${customer.name}`}
-      className="p-2 rounded-lg text-slate-600 hover:text-amber-700 hover:bg-amber-100 transition-colors"
-      onClick={() => archiveCustomer(customer)}
-    >
-      <Archive size={16} />
-    </button>
-  )}
+                    <td className="px-4 py-3 text-xs text-slate-600">
+                      <div className="flex items-start gap-1">
+                        <MapPin
+                          size={12}
+                          className="mt-0.5 shrink-0"
+                        />
 
-  <button
-    type="button"
-    title="Șterge definitiv"
-    aria-label={`Șterge ${customer.name}`}
-    className="p-2 rounded-lg text-slate-600 hover:text-red-700 hover:bg-red-100 transition-colors"
-    onClick={() => deleteCustomer(customer)}
-  >
-    <Trash2 size={16} />
-  </button>
-</div>
+                        <span>
+                          {customer.address || "-"}
+                          <br />
+                          {customer.city || "-"}
+                          {customer.county
+                            ? `, ${customer.county}`
+                            : ""}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-3 text-xs capitalize">
+                      {customer.source || "-"}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Badge
+                        map={CUSTOMER_STATUS}
+                        value={customer.status}
+                      />
+                    </td>
+
+                    <td
+                      className="px-4 py-3"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          title="WhatsApp"
+                          aria-label={`WhatsApp ${customer.name}`}
+                          disabled={isActionLoading}
+                          className="p-2 rounded-lg text-slate-600 hover:text-green-700 hover:bg-green-100 transition-colors disabled:opacity-40"
+                          onClick={() => openWhatsApp(customer)}
+                        >
+                          <MessageCircle size={16} />
+                        </button>
+
+                        <button
+                          type="button"
+                          title="Telefon"
+                          aria-label={`Apelează ${customer.name}`}
+                          disabled={isActionLoading}
+                          className="p-2 rounded-lg text-slate-600 hover:text-aj-navy hover:bg-slate-100 transition-colors disabled:opacity-40"
+                          onClick={() => callCustomer(customer)}
+                        >
+                          <Phone size={16} />
+                        </button>
+
+                        <button
+                          type="button"
+                          title="Google Maps"
+                          aria-label={`Deschide adresa pentru ${customer.name}`}
+                          disabled={isActionLoading}
+                          className="p-2 rounded-lg text-slate-600 hover:text-aj-navy hover:bg-slate-100 transition-colors disabled:opacity-40"
+                          onClick={() => openMaps(customer)}
+                        >
+                          <MapPin size={16} />
+                        </button>
+
+                        <button
+                          type="button"
+                          title="Editează"
+                          aria-label={`Editează ${customer.name}`}
+                          disabled={isActionLoading}
+                          className="p-2 rounded-lg text-slate-600 hover:text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-40"
+                          onClick={() => openEditModal(customer)}
+                        >
+                          <Pencil size={16} />
+                        </button>
+
+                        {customer.status !== "arhivat" && (
+                          <button
+                            type="button"
+                            title="Arhivează"
+                            aria-label={`Arhivează ${customer.name}`}
+                            disabled={isActionLoading}
+                            className="p-2 rounded-lg text-slate-600 hover:text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-40"
+                            onClick={() =>
+                              archiveCustomer(customer)
+                            }
+                          >
+                            <Archive size={16} />
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          title="Șterge definitiv"
+                          aria-label={`Șterge ${customer.name}`}
+                          disabled={isActionLoading}
+                          className="p-2 rounded-lg text-slate-600 hover:text-red-700 hover:bg-red-100 transition-colors disabled:opacity-40"
+                          onClick={() =>
+                            deleteCustomer(customer)
+                          }
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       <Modal
         open={open}
@@ -495,10 +550,10 @@ const deleteCustomer = async (customer) => {
               data-testid="input-customer-name"
               required
               value={form.name}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  name: e.target.value,
+                  name: event.target.value,
                 }))
               }
             />
@@ -509,10 +564,10 @@ const deleteCustomer = async (customer) => {
               data-testid="input-customer-phone"
               required
               value={form.phone}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  phone: e.target.value,
+                  phone: event.target.value,
                 }))
               }
               placeholder="+40..."
@@ -523,10 +578,10 @@ const deleteCustomer = async (customer) => {
             <TextInput
               type="email"
               value={form.email}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  email: e.target.value,
+                  email: event.target.value,
                 }))
               }
             />
@@ -535,10 +590,10 @@ const deleteCustomer = async (customer) => {
           <Field label="Adresă" wide>
             <TextInput
               value={form.address}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  address: e.target.value,
+                  address: event.target.value,
                 }))
               }
             />
@@ -547,10 +602,10 @@ const deleteCustomer = async (customer) => {
           <Field label="Localitate">
             <TextInput
               value={form.city}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  city: e.target.value,
+                  city: event.target.value,
                 }))
               }
             />
@@ -559,10 +614,10 @@ const deleteCustomer = async (customer) => {
           <Field label="Județ">
             <TextInput
               value={form.county}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  county: e.target.value,
+                  county: event.target.value,
                 }))
               }
             />
@@ -572,10 +627,14 @@ const deleteCustomer = async (customer) => {
             <Select
               options={CLIENT_TYPES}
               value={form.client_type}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  client_type: e.target.value,
+                  client_type: event.target.value,
+                  cui:
+                    event.target.value === "firma"
+                      ? current.cui
+                      : "",
                 }))
               }
             />
@@ -585,10 +644,10 @@ const deleteCustomer = async (customer) => {
             <TextInput
               value={form.cui}
               disabled={form.client_type !== "firma"}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  cui: e.target.value,
+                  cui: event.target.value,
                 }))
               }
             />
@@ -601,10 +660,10 @@ const deleteCustomer = async (customer) => {
                 label: source,
               }))}
               value={form.source}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  source: e.target.value,
+                  source: event.target.value,
                 }))
               }
             />
@@ -619,10 +678,10 @@ const deleteCustomer = async (customer) => {
                 })
               )}
               value={form.status}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  status: e.target.value,
+                  status: event.target.value,
                 }))
               }
             />
@@ -631,10 +690,10 @@ const deleteCustomer = async (customer) => {
           <Field label="Observații" wide>
             <TextArea
               value={form.notes}
-              onChange={(e) =>
+              onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  notes: e.target.value,
+                  notes: event.target.value,
                 }))
               }
             />
