@@ -193,10 +193,68 @@ async def update_user(user_id: str, body: UserUpdate, user: dict = Depends(requi
     return doc
 
 
-@api.delete("/users/{user_id}")
-async def delete_user(user_id: str, user: dict = Depends(require_roles("admin"))):
-    await db.users.delete_one({"id": user_id})
-    return {"ok": True}
+@api.delete("/customers/{customer_id}")
+async def delete_customer(
+    customer_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    customer = await db.customers.find_one({"id": customer_id})
+
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail="Client inexistent"
+        )
+
+    measurements = await db.measurements.count_documents(
+        {"customer_id": customer_id}
+    )
+
+    installations = await db.installations.count_documents(
+        {"customer_id": customer_id}
+    )
+
+    work_orders = await db.work_orders.count_documents(
+        {"customer_id": customer_id}
+    )
+
+    warranties = await db.warranties.count_documents(
+        {"customer_id": customer_id}
+    )
+
+    tickets = await db.service_tickets.count_documents(
+        {"customer_id": customer_id}
+    )
+
+    referrals = await db.referrals.count_documents(
+        {"referrer_customer_id": customer_id}
+    )
+
+    total = (
+        measurements
+        + installations
+        + work_orders
+        + warranties
+        + tickets
+        + referrals
+    )
+
+    if total > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Clientul are istoric și nu poate fi șters. "
+                "Folosește Arhivare."
+            ),
+        )
+
+    await db.customers.delete_one(
+        {"id": customer_id}
+    )
+
+    return {
+        "ok": True
+    }
 
 
 # ============ CUSTOMERS ============
