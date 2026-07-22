@@ -313,6 +313,31 @@ async def update_customer(customer_id: str, body: dict, user: dict = Depends(get
     doc = await db.customers.find_one({"id": customer_id}, {"_id": 0})
     return doc
 
+@api.patch("/customers/{customer_id}/archive")
+async def archive_customer(
+    customer_id: str,
+    user: dict = Depends(get_current_user),
+):
+    result = await db.customers.update_one(
+        {"id": customer_id},
+        {
+            "$set": {
+                "status": "arhivat",
+                "updated_at": now_iso(),
+            }
+        },
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Client inexistent",
+        )
+
+    return await db.customers.find_one(
+        {"id": customer_id},
+        {"_id": 0},
+    )
 
 @api.delete("/customers/{customer_id}")
 async def delete_customer(customer_id: str, user: dict = Depends(require_roles("admin"))):
