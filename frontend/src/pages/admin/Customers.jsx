@@ -415,54 +415,69 @@ const deleteCustomer = async (customer) => {
                     className="px-4 py-3"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        title="WhatsApp"
-                        aria-label={`WhatsApp ${customer.name}`}
-                        className="p-2 rounded-lg text-slate-600 hover:text-green-700 hover:bg-green-100 transition-colors"
-                        onClick={() => openWhatsApp(customer)}
-                      >
-                        <MessageCircle size={16} />
-                      </button>
+<div className="flex items-center justify-end gap-1">
+  <button
+    type="button"
+    title="WhatsApp"
+    aria-label={`WhatsApp ${customer.name}`}
+    className="p-2 rounded-lg text-slate-600 hover:text-green-700 hover:bg-green-100 transition-colors"
+    onClick={() => openWhatsApp(customer)}
+  >
+    <MessageCircle size={16} />
+  </button>
 
-                      <button
-                        type="button"
-                        title="Telefon"
-                        aria-label={`Apelează ${customer.name}`}
-                        className="p-2 rounded-lg text-slate-600 hover:text-aj-navy hover:bg-slate-100 transition-colors"
-                        onClick={() => callCustomer(customer)}
-                      >
-                        <Phone size={16} />
-                      </button>
+  <button
+    type="button"
+    title="Telefon"
+    aria-label={`Apelează ${customer.name}`}
+    className="p-2 rounded-lg text-slate-600 hover:text-aj-navy hover:bg-slate-100 transition-colors"
+    onClick={() => callCustomer(customer)}
+  >
+    <Phone size={16} />
+  </button>
 
-                      <button
-                        type="button"
-                        title="Google Maps"
-                        aria-label={`Deschide adresa pentru ${customer.name}`}
-                        className="p-2 rounded-lg text-slate-600 hover:text-aj-navy hover:bg-slate-100 transition-colors"
-                        onClick={() => openMaps(customer)}
-                      >
-                        <MapPin size={16} />
-                      </button>
+  <button
+    type="button"
+    title="Google Maps"
+    aria-label={`Deschide adresa pentru ${customer.name}`}
+    className="p-2 rounded-lg text-slate-600 hover:text-aj-navy hover:bg-slate-100 transition-colors"
+    onClick={() => openMaps(customer)}
+  >
+    <MapPin size={16} />
+  </button>
 
-                      <button
-                        type="button"
-                        title="Editează"
-                        aria-label={`Editează ${customer.name}`}
-                        className="p-2 rounded-lg text-slate-600 hover:text-blue-700 hover:bg-blue-100 transition-colors"
-                        onClick={() => openEditModal(customer)}
-                      >
-                        <Pencil size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+  <button
+    type="button"
+    title="Editează"
+    aria-label={`Editează ${customer.name}`}
+    className="p-2 rounded-lg text-slate-600 hover:text-blue-700 hover:bg-blue-100 transition-colors"
+    onClick={() => openEditModal(customer)}
+  >
+    <Pencil size={16} />
+  </button>
+
+  {customer.status !== "arhivat" && (
+    <button
+      type="button"
+      title="Arhivează"
+      aria-label={`Arhivează ${customer.name}`}
+      className="p-2 rounded-lg text-slate-600 hover:text-amber-700 hover:bg-amber-100 transition-colors"
+      onClick={() => archiveCustomer(customer)}
+    >
+      <Archive size={16} />
+    </button>
+  )}
+
+  <button
+    type="button"
+    title="Șterge definitiv"
+    aria-label={`Șterge ${customer.name}`}
+    className="p-2 rounded-lg text-slate-600 hover:text-red-700 hover:bg-red-100 transition-colors"
+    onClick={() => deleteCustomer(customer)}
+  >
+    <Trash2 size={16} />
+  </button>
+</div>
 
       <Modal
         open={open}
