@@ -223,6 +223,50 @@ export default function AdminCustomers() {
       return;
     }
 
+    const archiveCustomer = async (customer) => {
+  const confirmed = window.confirm(
+    `Arhivezi clientul „${customer.name}”? Clientul va rămâne în sistem și își va păstra istoricul.`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await api.patch(`/customers/${customer.id}/archive`);
+
+    toast.success("Clientul a fost arhivat");
+    await load();
+  } catch (err) {
+    console.error("Eroare la arhivarea clientului:", err);
+
+    toast.error(
+      err?.response?.data?.detail ||
+        "Nu am putut arhiva clientul"
+    );
+  }
+};
+
+const deleteCustomer = async (customer) => {
+  const confirmed = window.confirm(
+    `Ștergi definitiv clientul „${customer.name}”? Această acțiune nu poate fi anulată.`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await api.delete(`/customers/${customer.id}`);
+
+    toast.success("Clientul a fost șters definitiv");
+    await load();
+  } catch (err) {
+    console.error("Eroare la ștergerea clientului:", err);
+
+    toast.error(
+      err?.response?.data?.detail ||
+        "Nu am putut șterge clientul"
+    );
+  }
+};
+
     window.open(
       `https://maps.google.com/?q=${encodeURIComponent(location)}`,
       "_blank",
