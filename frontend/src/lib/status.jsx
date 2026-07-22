@@ -7,6 +7,7 @@ export const CUSTOMER_STATUS = {
   comanda_activa: { label: "Comandă activă", cls: "bg-indigo-50 text-indigo-700 border-indigo-200" },
   finalizat: { label: "Finalizat", cls: "bg-slate-100 text-slate-700 border-slate-200" },
   inactiv: { label: "Inactiv", cls: "bg-gray-100 text-gray-500 border-gray-200" },
+  arhivat: { label: "Arhivat", cls: "bg-slate-200 text-slate-600 border-slate-300" },
 };
 
 export const LEAD_STATUS = {
