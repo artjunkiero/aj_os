@@ -1174,7 +1174,98 @@ async def update_settings(body: dict, user: dict = Depends(require_roles("admin"
     await db.settings.update_one({"id": "singleton"}, {"$set": body}, upsert=True)
     return await db.settings.find_one({"id": "singleton"}, {"_id": 0})
 
+# ============ RESET DEMO DATA ============
 
+class ResetDemoDataRequest(BaseModel):
+    confirmation: str
+
+
+@api.post("/settings/reset-demo-data")
+async def reset_demo_data(
+    body: ResetDemoDataRequest,
+    user: dict = Depends(require_roles("super_admin")),
+):
+    """
+    Șterge toate datele operaționale și toți utilizatorii,
+    cu excepția contului Super Admin autentificat.
+
+    Setările firmei sunt păstrate.
+    """
+
+    if body.confirmation.strip().upper() != "RESET":
+        raise HTTPException(
+            status_code=400,
+            detail='Pentru confirmare trebuie să introduci exact textul "RESET".',
+        )
+
+    current_user_id = user.get("id")
+    current_user_email = user.get("email")
+
+    if not current_user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Contul Super Admin nu a putut fi identificat.",
+        )
+
+    current_admin = await db.users.find_one(
+        {
+            "id": current_user_id,
+            "role": "super_admin",
+        }
+    )
+
+    if not current_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Resetarea poate fi efectuată numai de un Super Admin.",
+        )
+
+    # Setările firmei și contul Super Admin autentificat sunt păstrate.
+    collections_to_clear = [
+        "customers",
+        "leads",
+        "measurements",
+        "installations",
+        "work_orders",
+        "production",
+        "warranties",
+        "service_tickets",
+        "notifications",
+        "otp_codes",
+        "messages",
+        "referrals",
+    ]
+
+    deleted = {}
+
+    for collection_name in collections_to_clear:
+        result = await db[collection_name].delete_many({})
+        deleted[collection_name] = result.deleted_count
+
+    # Șterge ceilalți angajați și administratori.
+    users_result = await db.users.delete_many(
+        {
+            "id": {"$ne": current_user_id}
+        }
+    )
+    deleted["users"] = users_result.deleted_count
+
+    logger.warning(
+        "Demo data reset performed by Super Admin %s (%s). Deleted: %s",
+        current_user_email,
+        current_user_id,
+        deleted,
+    )
+
+    return {
+        "ok": True,
+        "message": (
+            "Datele demo au fost șterse. "
+            "Contul Super Admin și setările firmei au fost păstrate."
+        ),
+        "deleted": deleted,
+    }
+    
 # ============ DASHBOARD STATS ============
 @api.get("/dashboard/stats")
 async def dashboard_stats(user: dict = Depends(get_current_user)):
