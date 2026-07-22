@@ -157,111 +157,16 @@ async def test_whatsapp(body: WhatsAppTestRequest):
     return result
 
 # ============ USERS / EMPLOYEES ============
-@api.get("/users")
-async def list_users(user: dict = Depends(get_current_user)):
-    docs = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
-    return docs
-
-
-@api.post("/users")
-async def create_user(body: UserCreate, user: dict = Depends(require_roles("admin"))):
-    email = body.email.strip().lower()
-    if body.role not in ROLES:
-        raise HTTPException(status_code=400, detail="Rol invalid")
-    existing = await db.users.find_one({"email": email})
-    if existing:
-        raise HTTPException(status_code=400, detail="Emailul există deja")
-    new_user = User(email=email, name=body.name, phone=body.phone or "", role=body.role, active=body.active)
-    doc = new_user.model_dump()
-    doc["password_hash"] = hash_password(body.password)
-    await db.users.insert_one(doc)
-    return strip_id(doc)
-
-
-@api.patch("/users/{user_id}")
-async def update_user(user_id: str, body: UserUpdate, user: dict = Depends(require_roles("admin"))):
-    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
-    if "password" in updates:
-        updates["password_hash"] = hash_password(updates.pop("password"))
-    if "email" in updates:
-        updates["email"] = updates["email"].strip().lower()
-    if updates:
-        await db.users.update_one({"id": user_id}, {"$set": updates})
-    doc = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Utilizator inexistent")
-    return doc
-
-
-@api.delete("/customers/{customer_id}")
-async def delete_customer(
-    customer_id: str,
-    user: dict = Depends(require_roles("admin")),
-):
-    customer = await db.customers.find_one({"id": customer_id})
-
-    if not customer:
-        raise HTTPException(
-            status_code=404,
-            detail="Client inexistent"
-        )
-
-    measurements = await db.measurements.count_documents(
-        {"customer_id": customer_id}
-    )
-
-    installations = await db.installations.count_documents(
-        {"customer_id": customer_id}
-    )
-
-    work_orders = await db.work_orders.count_documents(
-        {"customer_id": customer_id}
-    )
-
-    warranties = await db.warranties.count_documents(
-        {"customer_id": customer_id}
-    )
-
-    tickets = await db.service_tickets.count_documents(
-        {"customer_id": customer_id}
-    )
-
-    referrals = await db.referrals.count_documents(
-        {"referrer_customer_id": customer_id}
-    )
-
-    total = (
-        measurements
-        + installations
-        + work_orders
-        + warranties
-        + tickets
-        + referrals
-    )
-
-    if total > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Clientul are istoric și nu poate fi șters. "
-                "Folosește Arhivare."
-            ),
-        )
-
-    await db.customers.delete_one(
-        {"id": customer_id}
-    )
-
-    return {
-        "ok": True
-    }
-
-
 # ============ CUSTOMERS ============
+
 @api.get("/customers")
-async def list_customers(q: Optional[str] = None, status: Optional[str] = None,
-                         user: dict = Depends(get_current_user)):
+async def list_customers(
+    q: Optional[str] = None,
+    status: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
     query = {}
+
     if q:
         query["$or"] = [
             {"name": {"$regex": q, "$options": "i"}},
@@ -269,56 +174,156 @@ async def list_customers(q: Optional[str] = None, status: Optional[str] = None,
             {"email": {"$regex": q, "$options": "i"}},
             {"city": {"$regex": q, "$options": "i"}},
         ]
+
     if status:
         query["status"] = status
-    docs = await db.customers.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+    docs = (
+        await db.customers
+        .find(query, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(1000)
+    )
+
     return docs
 
 
 @api.get("/customers/{customer_id}")
-async def get_customer(customer_id: str, user: dict = Depends(get_current_user)):
-    doc = await db.customers.find_one({"id": customer_id}, {"_id": 0})
+async def get_customer(
+    customer_id: str,
+    user: dict = Depends(get_current_user),
+):
+    doc = await db.customers.find_one(
+        {"id": customer_id},
+        {"_id": 0},
+    )
+
     if not doc:
-        raise HTTPException(status_code=404, detail="Client inexistent")
-    # Aggregate history
-    leads = await db.leads.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
-    measurements = await db.measurements.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
-    installations = await db.installations.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
-    work_orders = await db.work_orders.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
-    warranties = await db.warranties.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
-    tickets = await db.service_tickets.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
-    referrals = await db.referrals.find({"referrer_customer_id": customer_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+        raise HTTPException(
+            status_code=404,
+            detail="Client inexistent",
+        )
+
+    leads = await db.leads.find(
+        {"customer_id": customer_id},
+        {"_id": 0},
+    ).to_list(100)
+
+    measurements = await db.measurements.find(
+        {"customer_id": customer_id},
+        {"_id": 0},
+    ).to_list(100)
+
+    installations = await db.installations.find(
+        {"customer_id": customer_id},
+        {"_id": 0},
+    ).to_list(100)
+
+    work_orders = await db.work_orders.find(
+        {"customer_id": customer_id},
+        {"_id": 0},
+    ).to_list(100)
+
+    warranties = await db.warranties.find(
+        {"customer_id": customer_id},
+        {"_id": 0},
+    ).to_list(100)
+
+    tickets = await db.service_tickets.find(
+        {"customer_id": customer_id},
+        {"_id": 0},
+    ).to_list(100)
+
+    referrals = (
+        await db.referrals
+        .find(
+            {"referrer_customer_id": customer_id},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(100)
+    )
+
     return {
-        "customer": doc, "leads": leads, "measurements": measurements,
-        "installations": installations, "work_orders": work_orders,
-        "warranties": warranties, "service_tickets": tickets,
+        "customer": doc,
+        "leads": leads,
+        "measurements": measurements,
+        "installations": installations,
+        "work_orders": work_orders,
+        "warranties": warranties,
+        "service_tickets": tickets,
         "referrals": referrals,
     }
 
 
 @api.post("/customers")
-async def create_customer(body: CustomerBase, user: dict = Depends(get_current_user)):
-    c = Customer(**body.model_dump())
-    doc = c.model_dump()
+async def create_customer(
+    body: CustomerBase,
+    user: dict = Depends(get_current_user),
+):
+    customer = Customer(**body.model_dump())
+    doc = customer.model_dump()
+
     await db.customers.insert_one(doc)
-    await _ensure_referral_code(c.id)
-    return await db.customers.find_one({"id": c.id}, {"_id": 0})
+    await _ensure_referral_code(customer.id)
+
+    return await db.customers.find_one(
+        {"id": customer.id},
+        {"_id": 0},
+    )
 
 
 @api.patch("/customers/{customer_id}")
-async def update_customer(customer_id: str, body: dict, user: dict = Depends(get_current_user)):
-    body.pop("id", None)
-    body["updated_at"] = now_iso()
-    await db.customers.update_one({"id": customer_id}, {"$set": body})
-    doc = await db.customers.find_one({"id": customer_id}, {"_id": 0})
-    return doc
+async def update_customer(
+    customer_id: str,
+    body: dict,
+    user: dict = Depends(get_current_user),
+):
+    existing_customer = await db.customers.find_one(
+        {"id": customer_id},
+    )
+
+    if not existing_customer:
+        raise HTTPException(
+            status_code=404,
+            detail="Client inexistent",
+        )
+
+    updates = dict(body)
+
+    updates.pop("id", None)
+    updates.pop("_id", None)
+    updates.pop("created_at", None)
+
+    updates["updated_at"] = now_iso()
+
+    await db.customers.update_one(
+        {"id": customer_id},
+        {"$set": updates},
+    )
+
+    return await db.customers.find_one(
+        {"id": customer_id},
+        {"_id": 0},
+    )
+
 
 @api.patch("/customers/{customer_id}/archive")
 async def archive_customer(
     customer_id: str,
     user: dict = Depends(get_current_user),
 ):
-    result = await db.customers.update_one(
+    customer = await db.customers.find_one(
+        {"id": customer_id},
+    )
+
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail="Client inexistent",
+        )
+
+    await db.customers.update_one(
         {"id": customer_id},
         {
             "$set": {
@@ -328,23 +333,93 @@ async def archive_customer(
         },
     )
 
-    if result.matched_count == 0:
-        raise HTTPException(
-            status_code=404,
-            detail="Client inexistent",
-        )
-
     return await db.customers.find_one(
         {"id": customer_id},
         {"_id": 0},
     )
 
+
 @api.delete("/customers/{customer_id}")
-async def delete_customer(customer_id: str, user: dict = Depends(require_roles("admin"))):
-    await db.customers.delete_one({"id": customer_id})
-    return {"ok": True}
+async def delete_customer(
+    customer_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    customer = await db.customers.find_one(
+        {"id": customer_id},
+    )
 
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail="Client inexistent",
+        )
 
+    measurements = await db.measurements.count_documents(
+        {"customer_id": customer_id},
+    )
+
+    installations = await db.installations.count_documents(
+        {"customer_id": customer_id},
+    )
+
+    work_orders = await db.work_orders.count_documents(
+        {"customer_id": customer_id},
+    )
+
+    warranties = await db.warranties.count_documents(
+        {"customer_id": customer_id},
+    )
+
+    tickets = await db.service_tickets.count_documents(
+        {"customer_id": customer_id},
+    )
+
+    leads = await db.leads.count_documents(
+        {"customer_id": customer_id},
+    )
+
+    referrals_as_referrer = await db.referrals.count_documents(
+        {"referrer_customer_id": customer_id},
+    )
+
+    referrals_as_referred = await db.referrals.count_documents(
+        {"referred_customer_id": customer_id},
+    )
+
+    total_history = (
+        measurements
+        + installations
+        + work_orders
+        + warranties
+        + tickets
+        + leads
+        + referrals_as_referrer
+        + referrals_as_referred
+    )
+
+    if total_history > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Clientul are istoric și nu poate fi șters. "
+                "Folosește opțiunea Arhivează."
+            ),
+        )
+
+    result = await db.customers.delete_one(
+        {"id": customer_id},
+    )
+
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Client inexistent",
+        )
+
+    return {
+        "ok": True,
+        "message": "Clientul a fost șters",
+    }
 # ============ LEADS ============
 @api.get("/leads")
 async def list_leads(status: Optional[str] = None, user: dict = Depends(get_current_user)):
