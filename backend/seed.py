@@ -36,9 +36,22 @@ async def seed_all(db):
                 {"$set": {"password_hash": hash_password(admin_password)}}
             )
 
-    # Only seed rest if we have no other users
-    if await db.users.count_documents({}) > 1:
-        return
+    # Datele demo sunt create numai când variabila SEED_DEMO_DATA este activată.
+seed_demo_enabled = (
+    os.environ.get("SEED_DEMO_DATA", "false")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
+
+if not seed_demo_enabled:
+    logger.info("Demo seed disabled. Only the Super Admin account is ensured.")
+    return
+
+# Nu dubla datele demo dacă acestea există deja.
+if await db.users.count_documents({}) > 1:
+    logger.info("Demo data already exists. Seed skipped.")
+    return
 
     def mkuser(email, name, role, phone, pwd="ArtJunkie123!"):
         u = User(email=email, name=name, role=role, phone=phone)
