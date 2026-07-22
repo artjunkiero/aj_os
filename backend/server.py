@@ -157,6 +157,202 @@ async def test_whatsapp(body: WhatsAppTestRequest):
     return result
 
 # ============ USERS / EMPLOYEES ============
+
+def ensure_employee_admin(user: dict):
+    if user.get("role") not in {"super_admin", "admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Nu ai permisiunea de a administra angajații",
+        )
+
+
+@api.get("/users")
+async def list_users(
+    user: dict = Depends(get_current_user),
+):
+    ensure_employee_admin(user)
+
+    docs = (
+        await db.users
+        .find({}, {"_id": 0, "password_hash": 0})
+        .sort("name", 1)
+        .to_list(500)
+    )
+
+    return docs
+
+
+@api.post("/users")
+async def create_user(
+    body: UserCreate,
+    user: dict = Depends(get_current_user),
+):
+    ensure_employee_admin(user)
+
+    payload = body.model_dump()
+
+    email = str(payload.get("email", "")).strip().lower()
+    name = str(payload.get("name", "")).strip()
+    phone = str(payload.get("phone", "") or "").strip()
+    password = str(payload.pop("password", "") or "")
+    role = payload.get("role", "measurement")
+    active = payload.get("active", True)
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Numele este obligatoriu",
+        )
+
+    if not email:
+        raise HTTPException(
+            status_code=400,
+            detail="Emailul este obligatoriu",
+        )
+
+    if len(password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Parola trebuie să aibă minimum 6 caractere",
+        )
+
+    if role == "client":
+        raise HTTPException(
+            status_code=400,
+            detail="Clienții nu pot fi creați din modulul Angajați",
+        )
+
+    if role not in ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail="Rol invalid",
+        )
+
+    existing = await db.users.find_one({"email": email})
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Există deja un utilizator cu acest email",
+        )
+
+    employee = {
+        "id": new_id(),
+        "email": email,
+        "name": name,
+        "phone": phone,
+        "role": role,
+        "active": bool(active),
+        "password_hash": hash_password(password),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+
+    await db.users.insert_one(employee.copy())
+
+    return strip_id(employee)
+
+
+@api.patch("/users/{user_id}")
+async def update_user(
+    user_id: str,
+    body: dict,
+    current_user: dict = Depends(get_current_user),
+):
+    ensure_employee_admin(current_user)
+
+    existing = await db.users.find_one({"id": user_id})
+
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail="Angajat inexistent",
+        )
+
+    updates = dict(body)
+
+    updates.pop("id", None)
+    updates.pop("_id", None)
+    updates.pop("password_hash", None)
+    updates.pop("created_at", None)
+
+    if "name" in updates:
+        updates["name"] = str(updates["name"]).strip()
+
+        if not updates["name"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Numele este obligatoriu",
+            )
+
+    if "email" in updates:
+        email = str(updates["email"]).strip().lower()
+
+        if not email:
+            raise HTTPException(
+                status_code=400,
+                detail="Emailul este obligatoriu",
+            )
+
+        duplicate = await db.users.find_one({
+            "email": email,
+            "id": {"$ne": user_id},
+        })
+
+        if duplicate:
+            raise HTTPException(
+                status_code=400,
+                detail="Există deja un utilizator cu acest email",
+            )
+
+        updates["email"] = email
+
+    if "phone" in updates:
+        updates["phone"] = str(updates["phone"] or "").strip()
+
+    if "role" in updates:
+        if updates["role"] == "client":
+            raise HTTPException(
+                status_code=400,
+                detail="Rolul client nu poate fi atribuit unui angajat",
+            )
+
+        if updates["role"] not in ROLES:
+            raise HTTPException(
+                status_code=400,
+                detail="Rol invalid",
+            )
+
+    password = updates.pop("password", None)
+
+    if password:
+        password = str(password)
+
+        if len(password) < 6:
+            raise HTTPException(
+                status_code=400,
+                detail="Parola trebuie să aibă minimum 6 caractere",
+            )
+
+        updates["password_hash"] = hash_password(password)
+
+    if "active" in updates:
+        updates["active"] = bool(updates["active"])
+
+    updates["updated_at"] = now_iso()
+
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": updates},
+    )
+
+    updated = await db.users.find_one(
+        {"id": user_id},
+        {"_id": 0, "password_hash": 0},
+    )
+
+    return updated
+    
 # ============ CUSTOMERS ============
 
 @api.get("/customers")
