@@ -14,7 +14,7 @@ def new_id() -> str:
 
 
 # ============ USER / EMPLOYEE ============
-ROLES = ["super_admin", "admin", "sales", "measurement", "installer", "service", "client"]
+ROLES = ["super_admin", "admin", "sales", "technician", "client"]
 
 
 class UserBase(BaseModel):
