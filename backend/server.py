@@ -83,6 +83,60 @@ def strip_list(docs):
     return [strip_id(d) for d in docs]
 
 
+def normalize_assigned_user_ids(payload: dict) -> list[str]:
+    """Normalize new multi-assignment and legacy single-assignment payloads."""
+    raw = payload.get("assigned_user_ids")
+    if raw is None:
+        legacy = payload.get("assigned_to")
+        raw = [legacy] if legacy else []
+    elif isinstance(raw, str):
+        raw = [raw] if raw else []
+
+    result = []
+    for value in raw or []:
+        user_id = str(value or "").strip()
+        if user_id and user_id not in result:
+            result.append(user_id)
+    return result
+
+
+def apply_assignment_fields(payload: dict) -> list[str]:
+    """Store the canonical list and keep assigned_to during the transition."""
+    assigned_user_ids = normalize_assigned_user_ids(payload)
+    payload["assigned_user_ids"] = assigned_user_ids
+    payload["assigned_to"] = assigned_user_ids[0] if assigned_user_ids else ""
+    return assigned_user_ids
+
+
+def assigned_user_query(user_id: str) -> dict:
+    """Match both new records and legacy records not migrated yet."""
+    return {
+        "$or": [
+            {"assigned_user_ids": user_id},
+            {"assigned_to": user_id},
+        ]
+    }
+
+
+async def notify_assigned_users(
+    *,
+    user_ids: list[str],
+    customer_id: str,
+    kind: str,
+    title: str,
+    body: str,
+):
+    for user_id in user_ids:
+        await create_internal_notification(
+            db,
+            user_id=user_id,
+            customer_id=customer_id,
+            kind=kind,
+            title=title,
+            body=body,
+        )
+
+
 def _gen_referral_code() -> str:
     # 8 chars, uppercase alphanumeric (no ambiguous chars)
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -653,9 +707,9 @@ async def list_measurements(assigned_to: Optional[str] = None, status: Optional[
                             mine: Optional[bool] = False, user: dict = Depends(get_current_user)):
     query = {}
     if mine:
-        query["assigned_to"] = user["id"]
+        query.update(assigned_user_query(user["id"]))
     elif assigned_to:
-        query["assigned_to"] = assigned_to
+        query.update(assigned_user_query(assigned_to))
     if status:
         query["status"] = status
     docs = await db.measurements.find(query, {"_id": 0}).sort("date", 1).to_list(500)
@@ -669,6 +723,7 @@ async def create_measurement(
 ):
     m = Measurement(**body.model_dump())
     measurement_data = m.model_dump()
+    assigned_user_ids = apply_assignment_fields(measurement_data)
 
     # Folosim o copie, ca MongoDB să nu adauge _id în obiectul returnat
     await db.measurements.insert_one(
@@ -724,16 +779,15 @@ async def create_measurement(
                 ),
             )
 
-    if m.assigned_to:
+    if assigned_user_ids:
         assigned_customer_name = (
             customer.get("name", "")
             if customer
             else ""
         )
 
-        await create_internal_notification(
-            db,
-            user_id=m.assigned_to,
+        await notify_assigned_users(
+            user_ids=assigned_user_ids,
             customer_id=m.customer_id,
             kind="allocation",
             title="Măsurătoare alocată",
@@ -758,6 +812,10 @@ async def update_measurement(
     body.pop("id", None)
     body["updated_at"] = now_iso()
 
+    assignment_changed = "assigned_user_ids" in body or "assigned_to" in body
+    if assignment_changed:
+        apply_assignment_fields(body)
+
     prev = await db.measurements.find_one(
         {"id": mid},
         {"_id": 0},
@@ -779,23 +837,22 @@ async def update_measurement(
             detail="Măsurătoare inexistentă",
         )
 
-    # Notificare dacă s-a schimbat montatorul alocat
-    if (
-        prev
-        and body.get("assigned_to")
-        and prev.get("assigned_to") != body["assigned_to"]
-    ):
-        await create_internal_notification(
-            db,
-            user_id=body["assigned_to"],
-            customer_id=doc["customer_id"],
-            kind="allocation",
-            title="Măsurătoare alocată",
-            body=(
-                f"{doc.get('date', '')} "
-                f"{doc.get('time', '')}"
-            ),
-        )
+    # Notifică doar tehnicienii adăugați la această alocare.
+    if prev and assignment_changed:
+        previous_ids = set(normalize_assigned_user_ids(prev))
+        current_ids = normalize_assigned_user_ids(doc)
+        added_ids = [uid for uid in current_ids if uid not in previous_ids]
+        if added_ids:
+            await notify_assigned_users(
+                user_ids=added_ids,
+                customer_id=doc["customer_id"],
+                kind="allocation",
+                title="Măsurătoare alocată",
+                body=(
+                    f"{doc.get('date', '')} "
+                    f"{doc.get('time', '')}"
+                ),
+            )
 
     return doc
 
@@ -819,9 +876,9 @@ async def list_installations(assigned_to: Optional[str] = None, status: Optional
                              mine: Optional[bool] = False, user: dict = Depends(get_current_user)):
     query = {}
     if mine:
-        query["assigned_to"] = user["id"]
+        query.update(assigned_user_query(user["id"]))
     elif assigned_to:
-        query["assigned_to"] = assigned_to
+        query.update(assigned_user_query(assigned_to))
     if status:
         query["status"] = status
     docs = await db.installations.find(query, {"_id": 0}).sort("date", 1).to_list(500)
@@ -834,9 +891,11 @@ async def create_installation(
     user: dict = Depends(get_current_user),
 ):
     inst = Installation(**body.model_dump())
+    installation_data = inst.model_dump()
+    assigned_user_ids = apply_assignment_fields(installation_data)
 
     await db.installations.insert_one(
-        inst.model_dump().copy()
+        installation_data.copy()
     )
 
     customer = await db.customers.find_one(
@@ -844,11 +903,10 @@ async def create_installation(
         {"_id": 0},
     )
 
-    # Notificare internă pentru montator
-    if inst.assigned_to:
-        await create_internal_notification(
-            db,
-            user_id=inst.assigned_to,
+    # Notificare internă pentru fiecare tehnician alocat
+    if assigned_user_ids:
+        await notify_assigned_users(
+            user_ids=assigned_user_ids,
             customer_id=inst.customer_id,
             kind="allocation",
             title="Montaj alocat",
@@ -886,7 +944,7 @@ async def create_installation(
                 whatsapp_result,
             )
 
-    return inst.model_dump()
+    return installation_data
 
 
 @api.patch("/installations/{iid}")
@@ -897,6 +955,12 @@ async def update_installation(
 ):
     body.pop("id", None)
     body["updated_at"] = now_iso()
+
+    assignment_changed = "assigned_user_ids" in body or "assigned_to" in body
+    if assignment_changed:
+        apply_assignment_fields(body)
+
+    prev = await db.installations.find_one({"id": iid}, {"_id": 0})
 
     await db.installations.update_one(
         {"id": iid},
@@ -950,6 +1014,19 @@ async def update_installation(
                     doc["customer_id"],
                     whatsapp_result,
                 )
+
+    if prev and assignment_changed:
+        previous_ids = set(normalize_assigned_user_ids(prev))
+        current_ids = normalize_assigned_user_ids(doc)
+        added_ids = [uid for uid in current_ids if uid not in previous_ids]
+        if added_ids:
+            await notify_assigned_users(
+                user_ids=added_ids,
+                customer_id=doc["customer_id"],
+                kind="allocation",
+                title="Montaj alocat",
+                body=f"{doc.get('date', '')} {doc.get('time', '')}",
+            )
 
     # Activează automat garanția la finalizare
     if (
@@ -1102,7 +1179,7 @@ async def list_tickets(status: Optional[str] = None, mine: Optional[bool] = Fals
                        user: dict = Depends(get_current_user)):
     query = {}
     if mine:
-        query["assigned_to"] = user["id"]
+        query.update(assigned_user_query(user["id"]))
     if status:
         query["status"] = status
     docs = await db.service_tickets.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
@@ -1112,21 +1189,47 @@ async def list_tickets(status: Optional[str] = None, mine: Optional[bool] = Fals
 @api.post("/service-tickets")
 async def create_ticket(body: ServiceTicketBase, user: dict = Depends(get_current_user)):
     t = ServiceTicket(**body.model_dump())
-    await db.service_tickets.insert_one(t.model_dump())
-    if t.assigned_to:
-        await create_internal_notification(
-            db, user_id=t.assigned_to, customer_id=t.customer_id, kind="service",
-            title="Intervenție alocată", body=t.problem,
+    ticket_data = t.model_dump()
+    assigned_user_ids = apply_assignment_fields(ticket_data)
+    await db.service_tickets.insert_one(ticket_data.copy())
+    if assigned_user_ids:
+        await notify_assigned_users(
+            user_ids=assigned_user_ids,
+            customer_id=t.customer_id,
+            kind="service",
+            title="Intervenție alocată",
+            body=t.problem,
         )
-    return t.model_dump()
+    return ticket_data
 
 
 @api.patch("/service-tickets/{tid}")
 async def update_ticket(tid: str, body: dict, user: dict = Depends(get_current_user)):
     body.pop("id", None)
     body["updated_at"] = now_iso()
+    assignment_changed = "assigned_user_ids" in body or "assigned_to" in body
+    if assignment_changed:
+        apply_assignment_fields(body)
+
+    prev = await db.service_tickets.find_one({"id": tid}, {"_id": 0})
     await db.service_tickets.update_one({"id": tid}, {"$set": body})
-    return await db.service_tickets.find_one({"id": tid}, {"_id": 0})
+    doc = await db.service_tickets.find_one({"id": tid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Intervenție inexistentă")
+
+    if prev and assignment_changed:
+        previous_ids = set(normalize_assigned_user_ids(prev))
+        current_ids = normalize_assigned_user_ids(doc)
+        added_ids = [uid for uid in current_ids if uid not in previous_ids]
+        if added_ids:
+            await notify_assigned_users(
+                user_ids=added_ids,
+                customer_id=doc["customer_id"],
+                kind="service",
+                title="Intervenție alocată",
+                body=doc.get("problem", ""),
+            )
+    return doc
 
 
 @api.delete("/service-tickets/{tid}")
@@ -1273,12 +1376,17 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
 
     measurements_today = await db.measurements.count_documents({"date": today})
     installations_today = await db.installations.count_documents({"date": today})
-    unassigned_measurements = await db.measurements.count_documents({
-        "$or": [{"assigned_to": ""}, {"assigned_to": None}]
-    })
-    unassigned_installations = await db.installations.count_documents({
-        "$or": [{"assigned_to": ""}, {"assigned_to": None}]
-    })
+    unassigned_filter = {
+        "$and": [
+            {"$or": [
+                {"assigned_user_ids": {"$exists": False}},
+                {"assigned_user_ids": {"$size": 0}},
+            ]},
+            {"$or": [{"assigned_to": ""}, {"assigned_to": None}, {"assigned_to": {"$exists": False}}]},
+        ]
+    }
+    unassigned_measurements = await db.measurements.count_documents(unassigned_filter)
+    unassigned_installations = await db.installations.count_documents(unassigned_filter)
     late_installations = await db.installations.count_documents({
         "date": {"$lt": today},
         "status": {"$nin": ["finalizat", "anulat"]}
@@ -1323,10 +1431,27 @@ async def reports_summary(user: dict = Depends(get_current_user)):
     sources = await _to_list(db.customers.aggregate([
         {"$group": {"_id": "$source", "count": {"$sum": 1}}}
     ]))
-    # Employee performance: installations finished by installer
+    # Employee performance: each assigned technician receives credit for the installation.
     perf = await _to_list(db.installations.aggregate([
         {"$match": {"status": "finalizat"}},
-        {"$group": {"_id": "$assigned_to", "count": {"$sum": 1}}},
+        {"$project": {
+            "assignees": {
+                "$cond": [
+                    {"$gt": [{"$size": {"$ifNull": ["$assigned_user_ids", []]}}, 0]},
+                    "$assigned_user_ids",
+                    {"$cond": [
+                        {"$and": [
+                            {"$ne": [{"$ifNull": ["$assigned_to", ""]}, ""]},
+                            {"$ne": [{"$ifNull": ["$assigned_to", None]}, None]},
+                        ]},
+                        ["$assigned_to"],
+                        [],
+                    ]},
+                ]
+            }
+        }},
+        {"$unwind": "$assignees"},
+        {"$group": {"_id": "$assignees", "count": {"$sum": 1}}},
     ]))
     return {
         "leads_by_status": leads_by_status,
