@@ -129,7 +129,7 @@ async def seed_all(db):
         m = Measurement(
             customer_id=c["id"], address=c["address"],
             date=date, time=["09:00", "11:00", "13:30", "15:00", "17:00"][i],
-            assigned_to=technician_ids[i % len(technician_ids)] if technician_ids else "",
+            assigned_user_ids=[technician_ids[i % len(technician_ids)]] if technician_ids else [],
             products=[["perdele", "draperii"], ["rolete"], ["jaluzele"],
                       ["plise"], ["rulouri exterioare"]][i],
             status=["alocata", "in_drum", "masurata", "noua", "reprogramata"][i],
@@ -162,7 +162,7 @@ async def seed_all(db):
             customer_id=c["id"], work_order_id=wo_ids[i], address=c["address"],
             date=(today + timedelta(days=i)).date().isoformat(),
             time=["10:00", "12:00", "14:00", "16:00", "09:30"][i],
-            assigned_to=technician_ids[i % len(technician_ids)] if technician_ids else "",
+            assigned_user_ids=[technician_ids[i % len(technician_ids)]] if technician_ids else [],
             products=["Perdele + Draperii", "Rolete textile", "Jaluzele",
                       "Plise", "Rulouri exterioare"][i:i+1],
             status=["alocat", "in_drum", "in_montaj", "finalizat", "nou"][i],
@@ -202,7 +202,7 @@ async def seed_all(db):
         s = ServiceTicket(
             customer_id=customer_docs[i]["id"], work_order_id=wo_ids[i],
             problem=["Rolou blocat la ridicare", "Zgomot mecanism motorizat"][i],
-            assigned_to=technician_ids[0] if technician_ids else "",
+            assigned_user_ids=[technician_ids[0]] if technician_ids else [],
             status=["alocata", "in_lucru"][i],
             priority=["urgenta", "normala"][i],
         )
