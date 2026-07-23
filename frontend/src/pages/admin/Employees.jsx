@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { ROLE_LABELS } from "@/lib/status";
 import Modal, { Field, TextInput, Select } from "./_Modal";
 import {
   Plus,
@@ -19,10 +18,12 @@ const ROLES_OPT = [
   { value: "super_admin", label: "Super Admin" },
   { value: "admin", label: "Admin / Showroom" },
   { value: "sales", label: "Consilier vânzări" },
-  { value: "measurement", label: "Măsurători" },
-  { value: "installer", label: "Montator" },
-  { value: "service", label: "Service" },
+  { value: "technician", label: "Tehnician" },
 ];
+
+const ROLE_LABELS = Object.fromEntries(
+  ROLES_OPT.map(({ value, label }) => [value, label])
+);
 
 const ROLE_FILTER_OPTIONS = [
   { value: "", label: "Toate rolurile" },
@@ -39,7 +40,7 @@ const EMPTY = {
   email: "",
   name: "",
   phone: "",
-  role: "measurement",
+  role: "technician",
   password: "",
   active: true,
 };
@@ -114,8 +115,8 @@ export default function AdminEmployees() {
       total: rows.length,
       active: rows.filter((employee) => employee.active).length,
       inactive: rows.filter((employee) => !employee.active).length,
-      installers: rows.filter(
-        (employee) => employee.role === "installer"
+      technicians: rows.filter(
+        (employee) => employee.role === "technician"
       ).length,
     };
   }, [rows]);
@@ -133,7 +134,7 @@ export default function AdminEmployees() {
       email: employee.email || "",
       name: employee.name || "",
       phone: employee.phone || "",
-      role: employee.role || "measurement",
+      role: employee.role || "technician",
       password: "",
       active: employee.active !== false,
     });
@@ -329,11 +330,11 @@ export default function AdminEmployees() {
 
         <div className="aj-card p-4">
           <div className="text-xs uppercase tracking-wider text-slate-500">
-            Montatori
+            Tehnicieni
           </div>
 
           <div className="mt-2 text-2xl font-extrabold text-aj-navy">
-            {stats.installers}
+            {stats.technicians}
           </div>
         </div>
       </div>
