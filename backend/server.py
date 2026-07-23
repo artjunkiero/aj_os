@@ -195,7 +195,7 @@ async def create_user(
     name = str(payload.get("name", "")).strip()
     phone = str(payload.get("phone", "") or "").strip()
     password = str(payload.pop("password", "") or "")
-    role = payload.get("role", "measurement")
+    role = payload.get("role", "technician")
     active = payload.get("active", True)
 
     if not name:
