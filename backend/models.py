@@ -97,7 +97,8 @@ class MeasurementBase(BaseModel):
     date: str = ""  # ISO date
     time: str = ""  # HH:MM
     interval: Optional[str] = ""
-    assigned_to: Optional[str] = ""
+    assigned_user_ids: List[str] = Field(default_factory=list)
+    assigned_to: Optional[str] = ""  # legacy compatibility; remove after frontend migration
     products: List[str] = Field(default_factory=list)
     status: str = "noua"  # noua, alocata, notificata, in_drum, ajuns, masurata, oferta_de_facut, problema, anulata, reprogramata
     priority: str = "normala"  # normala, urgenta, foarte_urgenta
@@ -122,7 +123,8 @@ class InstallationBase(BaseModel):
     address: str = ""
     date: str = ""
     time: str = ""
-    assigned_to: Optional[str] = ""
+    assigned_user_ids: List[str] = Field(default_factory=list)
+    assigned_to: Optional[str] = ""  # legacy compatibility; remove after frontend migration
     products: List[str] = Field(default_factory=list)
     status: str = "nou"  # nou, alocat, notificat, pregatit, in_drum, ajuns, in_montaj, finalizat, problema, reprogramat, anulat
     notes: Optional[str] = ""
@@ -210,7 +212,8 @@ class ServiceTicketBase(BaseModel):
     warranty_id: Optional[str] = ""
     work_order_id: Optional[str] = ""
     problem: str = ""
-    assigned_to: Optional[str] = ""
+    assigned_user_ids: List[str] = Field(default_factory=list)
+    assigned_to: Optional[str] = ""  # legacy compatibility; remove after frontend migration
     status: str = "noua"  # noua, alocata, in_lucru, rezolvata, respinsa, contra_cost
     priority: str = "normala"
     notes: Optional[str] = ""
