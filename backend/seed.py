@@ -36,6 +36,18 @@ async def seed_all(db):
                 {"$set": {"password_hash": hash_password(admin_password)}}
             )
 
+    # Migrare automată: rolurile tehnice vechi devin un singur rol "technician".
+    legacy_roles = ["measurement", "installer", "service"]
+    migration_result = await db.users.update_many(
+        {"role": {"$in": legacy_roles}},
+        {"$set": {"role": "technician", "updated_at": now_iso()}},
+    )
+    if migration_result.modified_count:
+        logger.info(
+            "Migrated %s technical users to role technician.",
+            migration_result.modified_count,
+        )
+
     # Datele demo sunt create numai când variabila SEED_DEMO_DATA este activată.
     seed_demo_enabled = (
         os.environ.get("SEED_DEMO_DATA", "false")
@@ -62,18 +74,16 @@ async def seed_all(db):
     users = [
         mkuser("showroom@artjunkie.ro", "Ana Popescu", "admin", "+40711111111"),
         mkuser("vanzari@artjunkie.ro", "Mihai Ionescu", "sales", "+40722222222"),
-        mkuser("masuratori1@artjunkie.ro", "Cristian Radu", "measurement", "+40733333333"),
-        mkuser("masuratori2@artjunkie.ro", "Andrei Marin", "measurement", "+40733333334"),
-        mkuser("montator1@artjunkie.ro", "George Dumitrescu", "installer", "+40744444444"),
-        mkuser("montator2@artjunkie.ro", "Vlad Georgescu", "installer", "+40744444445"),
-        mkuser("service@artjunkie.ro", "Radu Stanciu", "service", "+40755555555"),
+        mkuser("tehnician1@artjunkie.ro", "Cristian Radu", "technician", "+40733333333"),
+        mkuser("tehnician2@artjunkie.ro", "Andrei Marin", "technician", "+40733333334"),
+        mkuser("tehnician3@artjunkie.ro", "George Dumitrescu", "technician", "+40744444444"),
+        mkuser("tehnician4@artjunkie.ro", "Vlad Georgescu", "technician", "+40744444445"),
+        mkuser("tehnician5@artjunkie.ro", "Radu Stanciu", "technician", "+40755555555"),
     ]
     await db.users.insert_many(users)
     user_map = {u["role"]: u["id"] for u in users}
     all_users = list(await db.users.find({}, {"_id": 0}).to_list(100))
-    measurement_ids = [u["id"] for u in all_users if u["role"] == "measurement"]
-    installer_ids = [u["id"] for u in all_users if u["role"] == "installer"]
-    service_ids = [u["id"] for u in all_users if u["role"] == "service"]
+    technician_ids = [u["id"] for u in all_users if u["role"] == "technician"]
 
     # Customers
     demo_customers = [
@@ -119,7 +129,7 @@ async def seed_all(db):
         m = Measurement(
             customer_id=c["id"], address=c["address"],
             date=date, time=["09:00", "11:00", "13:30", "15:00", "17:00"][i],
-            assigned_to=measurement_ids[i % len(measurement_ids)] if measurement_ids else "",
+            assigned_to=technician_ids[i % len(technician_ids)] if technician_ids else "",
             products=[["perdele", "draperii"], ["rolete"], ["jaluzele"],
                       ["plise"], ["rulouri exterioare"]][i],
             status=["alocata", "in_drum", "masurata", "noua", "reprogramata"][i],
@@ -152,7 +162,7 @@ async def seed_all(db):
             customer_id=c["id"], work_order_id=wo_ids[i], address=c["address"],
             date=(today + timedelta(days=i)).date().isoformat(),
             time=["10:00", "12:00", "14:00", "16:00", "09:30"][i],
-            assigned_to=installer_ids[i % len(installer_ids)] if installer_ids else "",
+            assigned_to=technician_ids[i % len(technician_ids)] if technician_ids else "",
             products=["Perdele + Draperii", "Rolete textile", "Jaluzele",
                       "Plise", "Rulouri exterioare"][i:i+1],
             status=["alocat", "in_drum", "in_montaj", "finalizat", "nou"][i],
@@ -192,7 +202,7 @@ async def seed_all(db):
         s = ServiceTicket(
             customer_id=customer_docs[i]["id"], work_order_id=wo_ids[i],
             problem=["Rolou blocat la ridicare", "Zgomot mecanism motorizat"][i],
-            assigned_to=service_ids[0] if service_ids else "",
+            assigned_to=technician_ids[0] if technician_ids else "",
             status=["alocata", "in_lucru"][i],
             priority=["urgenta", "normala"][i],
         )
