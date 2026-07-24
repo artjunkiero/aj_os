@@ -511,76 +511,206 @@ const updateProduct = (id, field, value) => {
             />
           </Field>
 
-          <Field label="Titlu" wide>
-            <TextInput
-              required
-              value={form.title}
-              onChange={(event) =>
+<>
+    <Field label="Număr comandă">
+        <TextInput
+            value={form.order_number}
+            onChange={(e) =>
                 setForm({
-                  ...form,
-                  title: event.target.value,
+                    ...form,
+                    order_number: e.target.value,
                 })
-              }
-              placeholder="Comandă #… — descriere"
-            />
-          </Field>
+            }
+        />
+    </Field>
 
-          <Field label="Total (lei)">
-            <TextInput
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.total_amount}
-              onChange={(event) =>
+    <Field label="Data">
+        <TextInput
+            type="date"
+            value={form.order_date}
+            onChange={(e) =>
                 setForm({
-                  ...form,
-                  total_amount: event.target.value,
+                    ...form,
+                    order_date: e.target.value,
                 })
-              }
-            />
-          </Field>
+            }
+        />
+    </Field>
 
-          <Field label="Avans (lei)">
-            <TextInput
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.advance_paid}
-              onChange={(event) =>
+    <Field label="Termen livrare">
+        <TextInput
+            type="date"
+            value={form.delivery_date}
+            onChange={(e) =>
                 setForm({
-                  ...form,
-                  advance_paid: event.target.value,
+                    ...form,
+                    delivery_date: e.target.value,
                 })
-              }
-            />
-          </Field>
+            }
+        />
+    </Field>
 
-          <Field label="Status">
-            <Select
-              value={form.status}
-              onChange={(event) =>
+    <Field label="Denumire comandă" wide>
+        <TextInput
+            value={form.title}
+            onChange={(e) =>
                 setForm({
-                  ...form,
-                  status: event.target.value,
+                    ...form,
+                    title: e.target.value,
                 })
-              }
-              options={STATUSES.map((item) => ({
-                value: item,
-                label: WORK_ORDER_STATUS[item].label,
-              }))}
-            />
-          </Field>
+            }
+        />
+    </Field>
 
-          <Field label="Rest de plată">
-            <TextInput
-              value={`${Math.max(
-                Number(form.total_amount || 0) -
-                  Number(form.advance_paid || 0),
+    <div className="col-span-full border-t pt-5 mt-2">
+
+        <div className="flex items-center justify-between mb-4">
+
+            <h3 className="font-bold text-lg">
+                Produse comandate
+            </h3>
+
+            <button
+                type="button"
+                onClick={addProduct}
+                className="aj-btn-gold px-3 py-2 rounded-lg"
+            >
+                + Adaugă produs
+            </button>
+
+        </div>
+
+        {form.products.map((product) => (
+
+            <div
+                key={product.id}
+                className="border rounded-xl p-4 mb-4 bg-white"
+            >
+
+                <div className="grid grid-cols-4 gap-3">
+
+                    <TextInput
+                        placeholder="Produs"
+                        value={product.product}
+                        onChange={(e)=>
+                            updateProduct(product.id,"product",e.target.value)
+                        }
+                    />
+
+                    <TextInput
+                        placeholder="Camera"
+                        value={product.room}
+                        onChange={(e)=>
+                            updateProduct(product.id,"room",e.target.value)
+                        }
+                    />
+
+                    <TextInput
+                        placeholder="Lățime"
+                        value={product.width}
+                        onChange={(e)=>
+                            updateProduct(product.id,"width",e.target.value)
+                        }
+                    />
+
+                    <TextInput
+                        placeholder="Înălțime"
+                        value={product.height}
+                        onChange={(e)=>
+                            updateProduct(product.id,"height",e.target.value)
+                        }
+                    />
+
+                    <TextInput
+                        placeholder="Cantitate"
+                        type="number"
+                        value={product.quantity}
+                        onChange={(e)=>
+                            updateProduct(product.id,"quantity",e.target.value)
+                        }
+                    />
+
+                    <TextInput
+                        placeholder="Preț"
+                        type="number"
+                        value={product.unit_price}
+                        onChange={(e)=>
+                            updateProduct(product.id,"unit_price",e.target.value)
+                        }
+                    />
+
+                    <TextInput
+                        placeholder="Discount"
+                        type="number"
+                        value={product.discount}
+                        onChange={(e)=>
+                            updateProduct(product.id,"discount",e.target.value)
+                        }
+                    />
+
+                    <TextInput
+                        disabled
+                        value={product.total}
+                    />
+
+                </div>
+
+                <div className="mt-3">
+
+                    <TextArea
+                        placeholder="Observații produs"
+                        value={product.notes}
+                        onChange={(e)=>
+                            updateProduct(product.id,"notes",e.target.value)
+                        }
+                    />
+
+                </div>
+
+                <div className="flex justify-end mt-3">
+
+                    <button
+                        type="button"
+                        onClick={() => removeProduct(product.id)}
+                        className="text-red-600 text-sm"
+                    >
+                        Șterge produs
+                    </button>
+
+                </div>
+
+            </div>
+
+        ))}
+
+    </div>
+
+    <Field label="Avans">
+        <TextInput
+            type="number"
+            value={form.advance_paid}
+            onChange={(e)=>
+                setForm({
+                    ...form,
+                    advance_paid:e.target.value,
+                })
+            }
+        />
+    </Field>
+
+    <Field label="Rest de plată">
+
+        <TextInput
+            disabled
+            value={Math.max(
+                Number(form.total_amount)-Number(form.advance_paid),
                 0
-              ).toLocaleString("ro-RO")} lei`}
-              disabled
-            />
-          </Field>
+            )}
+
+        />
+
+    </Field>
+</>
 
           <Field label="Observații" wide>
             <TextArea
