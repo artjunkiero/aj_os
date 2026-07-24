@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { INSTALLATION_STATUS, formatDate } from "@/lib/status";
 import Modal, { Field, TextInput, TextArea, Select } from "./_Modal";
 import EmployeeMultiSelect from "@/components/EmployeeMultiSelect";
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 
 const STATUSES = Object.keys(INSTALLATION_STATUS);
 
@@ -38,14 +38,28 @@ const getAssignedIds = (record) => {
   return record?.assigned_to ? [record.assigned_to] : [];
 };
 
+const installationToForm = (installation) => ({
+  customer_id: installation?.customer_id || "",
+  work_order_id: installation?.work_order_id || "",
+  address: installation?.address || "",
+  date: installation?.date || "",
+  time: installation?.time || "",
+  assigned_user_ids: getAssignedIds(installation),
+  products: Array.isArray(installation?.products) ? installation.products : [],
+  status: installation?.status || "nou",
+  notes: installation?.notes || "",
+});
+
 export default function AdminInstallations() {
   const [rows, setRows] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [workOrders, setWorkOrders] = useState([]);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(createEmptyForm());
   const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const load = async () => {
     try {
@@ -75,6 +89,24 @@ export default function AdminInstallations() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
+  const closeModal = () => {
+    setOpen(false);
+    setEditing(null);
+    setForm(createEmptyForm());
+  };
+
+  const openNew = () => {
+    setEditing(null);
+    setForm(createEmptyForm());
+    setOpen(true);
+  };
+
+  const openEdit = (installation) => {
+    setEditing(installation);
+    setForm(installationToForm(installation));
+    setOpen(true);
+  };
+
   const submit = async (event) => {
     event.preventDefault();
 
@@ -83,19 +115,29 @@ export default function AdminInstallations() {
       return;
     }
 
-    try {
-      await api.post("/installations", {
-        ...form,
-        assigned_to: form.assigned_user_ids[0] || "",
-      });
+    const payload = {
+      ...form,
+      assigned_to: form.assigned_user_ids[0] || "",
+    };
 
-      toast.success("Montaj creat");
-      setOpen(false);
-      setForm(createEmptyForm());
+    setSaving(true);
+
+    try {
+      if (editing?.id) {
+        await api.patch(`/installations/${editing.id}`, payload);
+        toast.success("Montaj actualizat");
+      } else {
+        await api.post("/installations", payload);
+        toast.success("Montaj creat");
+      }
+
+      closeModal();
       await load();
     } catch (error) {
       console.error("Eroare la salvarea montajului:", error);
       toast.error(error?.response?.data?.detail || "Nu am putut salva montajul");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -146,7 +188,7 @@ export default function AdminInstallations() {
 
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={openNew}
             className="aj-btn-gold px-4 py-2.5 rounded-lg flex items-center gap-2"
             data-testid="btn-new-installation"
           >
@@ -166,13 +208,14 @@ export default function AdminInstallations() {
                 <th className="px-4 py-3">Tehnicieni</th>
                 <th className="px-4 py-3">Produse</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Acțiuni</th>
               </tr>
             </thead>
 
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
                     Fără montaje.
                   </td>
                 </tr>
@@ -221,6 +264,16 @@ export default function AdminInstallations() {
                       ))}
                     </select>
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(installation)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:bg-aj-cream/60"
+                      data-testid={`edit-installation-${installation.id}`}
+                    >
+                      <Pencil size={14} /> Modifică
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -230,8 +283,8 @@ export default function AdminInstallations() {
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
-        title="Montaj nou"
+        onClose={closeModal}
+        title={editing ? "Editează montaj" : "Montaj nou"}
         wide
         testId="modal-installation"
       >
@@ -297,6 +350,17 @@ export default function AdminInstallations() {
             />
           </Field>
 
+          <Field label="Status">
+            <Select
+              value={form.status}
+              onChange={(event) => setForm({ ...form, status: event.target.value })}
+              options={STATUSES.map((item) => ({
+                value: item,
+                label: INSTALLATION_STATUS[item].label,
+              }))}
+            />
+          </Field>
+
           <Field label="Tehnicieni" wide>
             <EmployeeMultiSelect
               employees={technicians}
@@ -346,17 +410,19 @@ export default function AdminInstallations() {
           <div className="col-span-full flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={closeModal}
               className="px-4 py-2 rounded-lg border border-aj-line text-sm"
+              disabled={saving}
             >
               Anulează
             </button>
             <button
               type="submit"
-              className="aj-btn-navy px-4 py-2 rounded-lg text-sm"
+              className="aj-btn-navy px-4 py-2 rounded-lg text-sm disabled:opacity-60"
               data-testid="btn-save-installation"
+              disabled={saving}
             >
-              Salvează
+              {saving ? "Se salvează..." : editing ? "Actualizează" : "Salvează"}
             </button>
           </div>
         </form>
