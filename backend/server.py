@@ -696,8 +696,11 @@ async def notify_assigned_employees(
     appointment_type: str,
     change_type: str = "created",
 ) -> list[dict]:
-    """Trimite notificare internă și WhatsApp tuturor angajaților alocați."""
-    if not assigned_user_ids:
+    """Trimite notificări relevante angajaților, fără mesaje duplicate."""
+    employee_ids = list(dict.fromkeys(
+        str(employee_id) for employee_id in assigned_user_ids if employee_id
+    ))
+    if not employee_ids:
         return []
 
     customer = customer or {}
@@ -716,22 +719,39 @@ async def notify_assigned_employees(
 
     is_measurement = appointment_type == "measurement"
     appointment_label = "Măsurătoare" if is_measurement else "Montaj"
-    is_rescheduled = change_type == "rescheduled"
-    action_text = (
-        "Programarea la care ești alocat a fost modificată."
-        if is_rescheduled
-        else "Ai fost alocat la o programare nouă."
-    )
-    title = (
-        f"{appointment_label} modificat(ă)"
-        if is_rescheduled
-        else f"{appointment_label} alocat(ă)"
-    )
-    notification_kind = "reschedule" if is_rescheduled else "allocation"
+
+    change_config = {
+        "created": {
+            "action": "Ai fost alocat la o programare nouă.",
+            "title": f"{appointment_label} alocat(ă)",
+            "kind": "allocation",
+        },
+        "rescheduled": {
+            "action": "Programarea la care ești alocat a fost reprogramată.",
+            "title": f"{appointment_label} reprogramat(ă)",
+            "kind": "reschedule",
+        },
+        "cancelled": {
+            "action": "Programarea a fost ANULATĂ. Nu te mai deplasa la adresă.",
+            "title": f"{appointment_label} anulat(ă)",
+            "kind": "cancellation",
+        },
+        "removed": {
+            "action": "Ai fost retras din această programare. Nu te mai deplasa la adresă.",
+            "title": f"Retras din {appointment_label.lower()}",
+            "kind": "unassignment",
+        },
+        "completed": {
+            "action": "Programarea a fost marcată ca finalizată.",
+            "title": f"{appointment_label} finalizat(ă)",
+            "kind": "completion",
+        },
+    }
+    config = change_config.get(change_type, change_config["rescheduled"])
 
     results = []
 
-    for employee_id in assigned_user_ids:
+    for employee_id in employee_ids:
         employee = await db.users.find_one(
             {"id": employee_id},
             {"_id": 0, "password_hash": 0},
@@ -748,8 +768,8 @@ async def notify_assigned_employees(
             db,
             user_id=employee_id,
             customer_id=customer.get("id", ""),
-            kind=notification_kind,
-            title=title,
+            kind=config["kind"],
+            title=config["title"],
             body=(
                 f"Client: {customer_name} | "
                 f"{date_time} | {address} | "
@@ -766,6 +786,7 @@ async def notify_assigned_employees(
             )
             results.append({
                 "employee_id": employee_id,
+                "change_type": change_type,
                 "status": "pending",
                 "reason": "missing_phone",
             })
@@ -777,7 +798,7 @@ async def notify_assigned_employees(
             language_code="ro",
             parameters=[
                 employee.get("name") or "coleg",
-                action_text,
+                config["action"],
                 appointment_label,
                 customer_name,
                 date_time,
@@ -787,19 +808,238 @@ async def notify_assigned_employees(
 
         results.append({
             "employee_id": employee_id,
+            "change_type": change_type,
             **whatsapp_result,
         })
 
         if whatsapp_result.get("status") != "sent":
             logger.error(
                 "WhatsApp angajat eșuat employee_id=%s "
-                "appointment_type=%s result=%s",
+                "appointment_type=%s change_type=%s result=%s",
                 employee_id,
                 appointment_type,
+                change_type,
                 whatsapp_result,
             )
 
     return results
+
+
+CANCELLED_STATUSES = {"anulat", "anulata", "anulată", "cancelled", "canceled"}
+RESCHEDULED_STATUSES = {
+    "reprogramat", "reprogramata", "reprogramată", "rescheduled"
+}
+COMPLETED_STATUSES = {
+    "finalizat", "finalizata", "finalizată", "completed"
+}
+
+
+def normalize_status(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def assignment_changes(previous: dict, current: dict) -> tuple[list[str], list[str], list[str]]:
+    old_ids = set(get_assigned_user_ids(previous))
+    new_ids = set(get_assigned_user_ids(current))
+    return (
+        sorted(new_ids - old_ids),
+        sorted(old_ids - new_ids),
+        sorted(old_ids & new_ids),
+    )
+
+
+def actual_changed_fields(previous: dict, current: dict, requested_updates: dict) -> set[str]:
+    ignored = {"updated_at", "id", "_id"}
+    return {
+        field
+        for field in requested_updates
+        if field not in ignored and previous.get(field) != current.get(field)
+    }
+
+
+async def process_appointment_update_notifications(
+    *,
+    previous: dict,
+    current: dict,
+    requested_updates: dict,
+    customer: dict | None,
+    appointment_type: str,
+) -> dict:
+    """
+    Decide ce notificări trebuie trimise:
+    - data/ora/adresa sau status reprogramat: reprogramare;
+    - status anulat: anulare;
+    - angajați adăugați: alocare;
+    - angajați eliminați: retragere;
+    - observații/produse/prioritate: fără WhatsApp.
+    """
+    changed_fields = actual_changed_fields(
+        previous,
+        current,
+        requested_updates,
+    )
+    old_status = normalize_status(previous.get("status"))
+    new_status = normalize_status(current.get("status"))
+    status_changed = "status" in changed_fields
+    schedule_changed = bool({"date", "time", "address"} & changed_fields)
+
+    added_ids, removed_ids, unchanged_ids = assignment_changes(
+        previous,
+        current,
+    )
+    old_ids = get_assigned_user_ids(previous)
+    new_ids = get_assigned_user_ids(current)
+
+    customer_result = None
+    employee_results = []
+    reason = "no_relevant_change"
+
+    became_cancelled = (
+        status_changed
+        and new_status in CANCELLED_STATUSES
+        and old_status not in CANCELLED_STATUSES
+    )
+    became_rescheduled = (
+        status_changed
+        and new_status in RESCHEDULED_STATUSES
+        and old_status not in RESCHEDULED_STATUSES
+    )
+    became_completed = (
+        status_changed
+        and new_status in COMPLETED_STATUSES
+        and old_status not in COMPLETED_STATUSES
+    )
+
+    if became_cancelled:
+        reason = "cancelled"
+        affected_ids = sorted(set(old_ids) | set(new_ids))
+        employee_results.extend(
+            await notify_assigned_employees(
+                assigned_user_ids=affected_ids,
+                customer=customer,
+                appointment=current,
+                appointment_type=appointment_type,
+                change_type="cancelled",
+            )
+        )
+        # Nu există încă un template Meta aprobat pentru anularea clientului.
+        # Evităm send_whatsapp_message, care poate eșua în afara ferestrei de 24h.
+        return {
+            "customer": customer_result,
+            "employees": employee_results,
+            "changed_fields": sorted(changed_fields),
+            "reason": reason,
+            "customer_cancellation_template_required": True,
+        }
+
+    if became_rescheduled or schedule_changed:
+        reason = "rescheduled"
+
+        if customer and customer.get("phone"):
+            address = (
+                current.get("address")
+                or customer.get("address")
+                or "Adresa stabilită cu echipa ART JUNKIE"
+            )
+            customer_result = await send_whatsapp_template(
+                phone=customer["phone"],
+                template_name="reprogramare",
+                language_code="ro",
+                parameters=[
+                    customer.get("name") or "Client",
+                    str(current.get("date", "")),
+                    str(current.get("time", "")),
+                    str(address),
+                ],
+            )
+
+        # Angajații rămași în echipă află reprogramarea.
+        if unchanged_ids:
+            employee_results.extend(
+                await notify_assigned_employees(
+                    assigned_user_ids=unchanged_ids,
+                    customer=customer,
+                    appointment=current,
+                    appointment_type=appointment_type,
+                    change_type="rescheduled",
+                )
+            )
+
+        # Angajații nou adăugați primesc mesaj de alocare, nu două mesaje.
+        if added_ids:
+            employee_results.extend(
+                await notify_assigned_employees(
+                    assigned_user_ids=added_ids,
+                    customer=customer,
+                    appointment=current,
+                    appointment_type=appointment_type,
+                    change_type="created",
+                )
+            )
+
+        # Angajații scoși primesc explicit mesaj de retragere.
+        if removed_ids:
+            employee_results.extend(
+                await notify_assigned_employees(
+                    assigned_user_ids=removed_ids,
+                    customer=customer,
+                    appointment=previous,
+                    appointment_type=appointment_type,
+                    change_type="removed",
+                )
+            )
+
+        return {
+            "customer": customer_result,
+            "employees": employee_results,
+            "changed_fields": sorted(changed_fields),
+            "reason": reason,
+        }
+
+    # Schimbarea exclusivă a echipei.
+    if added_ids or removed_ids:
+        reason = "assignment_changed"
+
+        if added_ids:
+            employee_results.extend(
+                await notify_assigned_employees(
+                    assigned_user_ids=added_ids,
+                    customer=customer,
+                    appointment=current,
+                    appointment_type=appointment_type,
+                    change_type="created",
+                )
+            )
+
+        if removed_ids:
+            employee_results.extend(
+                await notify_assigned_employees(
+                    assigned_user_ids=removed_ids,
+                    customer=customer,
+                    appointment=previous,
+                    appointment_type=appointment_type,
+                    change_type="removed",
+                )
+            )
+
+    elif became_completed and new_ids:
+        reason = "completed"
+        employee_results.extend(
+            await notify_assigned_employees(
+                assigned_user_ids=new_ids,
+                customer=customer,
+                appointment=current,
+                appointment_type=appointment_type,
+                change_type="completed",
+            )
+        )
+
+    return {
+        "customer": customer_result,
+        "employees": employee_results,
+        "changed_fields": sorted(changed_fields),
+        "reason": reason,
+    }
 
 
 # ============ MEASUREMENTS ============
@@ -900,13 +1140,15 @@ async def update_measurement(
             detail="Măsurătoare inexistentă",
         )
 
-    body.pop("id", None)
-    body.pop("_id", None)
-    body["updated_at"] = now_iso()
+    updates = dict(body)
+    updates.pop("id", None)
+    updates.pop("_id", None)
+    updates.pop("created_at", None)
+    updates["updated_at"] = now_iso()
 
     await db.measurements.update_one(
         {"id": mid},
-        {"$set": body},
+        {"$set": updates},
     )
 
     doc = await db.measurements.find_one(
@@ -919,72 +1161,18 @@ async def update_measurement(
         {"_id": 0},
     )
 
-    schedule_fields = ("date", "time", "address")
-    employee_fields = (
-        "date",
-        "time",
-        "address",
-        "products",
-        "assigned_to",
-        "assigned_user_ids",
+    whatsapp = await process_appointment_update_notifications(
+        previous=prev,
+        current=doc,
+        requested_updates=updates,
+        customer=customer,
+        appointment_type="measurement",
     )
-    schedule_changed = any(
-        field in body and prev.get(field) != doc.get(field)
-        for field in schedule_fields
-    )
-    employee_notification_changed = any(
-        field in body and prev.get(field) != doc.get(field)
-        for field in employee_fields
-    )
-
-    customer_whatsapp = None
-
-    if schedule_changed and customer and customer.get("phone"):
-        measurement_address = (
-            doc.get("address")
-            or customer.get("address")
-            or "Adresa stabilită cu echipa ART JUNKIE"
-        )
-
-        customer_whatsapp = await send_whatsapp_template(
-            phone=customer["phone"],
-            template_name="reprogramare",
-            language_code="ro",
-            parameters=[
-                customer.get("name") or "Client",
-                str(doc.get("date", "")),
-                str(doc.get("time", "")),
-                str(measurement_address),
-            ],
-        )
-
-        if customer_whatsapp.get("status") != "sent":
-            logger.error(
-                "WhatsApp reprogramare măsurătoare eșuat "
-                "customer_id=%s result=%s",
-                doc["customer_id"],
-                customer_whatsapp,
-            )
-
-    employee_whatsapp = []
-
-    if employee_notification_changed:
-        employee_whatsapp = await notify_assigned_employees(
-            assigned_user_ids=get_assigned_user_ids(doc),
-            customer=customer,
-            appointment=doc,
-            appointment_type="measurement",
-            change_type="rescheduled",
-        )
 
     return {
         **doc,
-        "whatsapp": {
-            "customer": customer_whatsapp,
-            "employees": employee_whatsapp,
-        },
+        "whatsapp": whatsapp,
     }
-
 
 @api.delete("/measurements/{mid}")
 async def delete_measurement(
@@ -1093,13 +1281,15 @@ async def update_installation(
             detail="Montaj inexistent",
         )
 
-    body.pop("id", None)
-    body.pop("_id", None)
-    body["updated_at"] = now_iso()
+    updates = dict(body)
+    updates.pop("id", None)
+    updates.pop("_id", None)
+    updates.pop("created_at", None)
+    updates["updated_at"] = now_iso()
 
     await db.installations.update_one(
         {"id": iid},
-        {"$set": body},
+        {"$set": updates},
     )
 
     doc = await db.installations.find_one(
@@ -1112,68 +1302,18 @@ async def update_installation(
         {"_id": 0},
     )
 
-    schedule_fields = ("date", "time", "address")
-    employee_fields = (
-        "date",
-        "time",
-        "address",
-        "products",
-        "assigned_to",
-        "assigned_user_ids",
-    )
-    schedule_changed = any(
-        field in body and prev.get(field) != doc.get(field)
-        for field in schedule_fields
-    )
-    employee_notification_changed = any(
-        field in body and prev.get(field) != doc.get(field)
-        for field in employee_fields
+    whatsapp = await process_appointment_update_notifications(
+        previous=prev,
+        current=doc,
+        requested_updates=updates,
+        customer=customer,
+        appointment_type="installation",
     )
 
-    customer_whatsapp = None
-
-    if schedule_changed and customer and customer.get("phone"):
-        installation_address = (
-            doc.get("address")
-            or customer.get("address")
-            or "Adresa comunicată la programare"
-        )
-
-        customer_whatsapp = await send_whatsapp_template(
-            phone=customer["phone"],
-            template_name="reprogramare",
-            language_code="ro",
-            parameters=[
-                customer.get("name") or "Client",
-                str(doc.get("date", "")),
-                str(doc.get("time", "")),
-                str(installation_address),
-            ],
-        )
-
-        if customer_whatsapp.get("status") != "sent":
-            logger.error(
-                "WhatsApp reprogramare montaj eșuat "
-                "customer_id=%s result=%s",
-                doc["customer_id"],
-                customer_whatsapp,
-            )
-
-    employee_whatsapp = []
-
-    if employee_notification_changed:
-        employee_whatsapp = await notify_assigned_employees(
-            assigned_user_ids=get_assigned_user_ids(doc),
-            customer=customer,
-            appointment=doc,
-            appointment_type="installation",
-            change_type="rescheduled",
-        )
-
-    # Activează automat garanția la finalizare
+    # Activează automat garanția la finalizare.
     if (
-        body.get("status") == "finalizat"
-        and body.get("warranty_activated")
+        updates.get("status") == "finalizat"
+        and updates.get("warranty_activated")
     ):
         existing_w = await db.warranties.find_one(
             {"installation_id": iid}
@@ -1210,12 +1350,8 @@ async def update_installation(
 
     return {
         **doc,
-        "whatsapp": {
-            "customer": customer_whatsapp,
-            "employees": employee_whatsapp,
-        },
+        "whatsapp": whatsapp,
     }
-
 
 @api.delete("/installations/{iid}")
 async def delete_installation(iid: str, user: dict = Depends(get_current_user)):
