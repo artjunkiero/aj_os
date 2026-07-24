@@ -131,6 +131,7 @@ export default function AdminMeasurements() {
 
       closeModal();
       await load();
+      window.dispatchEvent(new Event("calendar:refresh"));
     } catch (error) {
       console.error("Eroare la salvarea măsurătorii:", error);
       toast.error(error?.response?.data?.detail || "Nu am putut salva măsurătoarea");
@@ -141,6 +142,8 @@ export default function AdminMeasurements() {
     try {
       await api.patch(`/measurements/${id}`, { status: newStatus });
       await load();
+      window.dispatchEvent(new Event("calendar:refresh"));
+      toast.success("Statusul măsurătorii a fost actualizat");
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Nu am putut schimba statusul");
     }
@@ -154,6 +157,7 @@ export default function AdminMeasurements() {
       });
       toast.success("Alocarea a fost actualizată");
       await load();
+      window.dispatchEvent(new Event("calendar:refresh"));
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Nu am putut actualiza alocarea");
     }
