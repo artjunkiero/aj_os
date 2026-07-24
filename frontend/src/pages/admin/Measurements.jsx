@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { MEASUREMENT_STATUS, formatDate } from "@/lib/status";
 import Modal, { Field, TextInput, TextArea, Select } from "./_Modal";
 import EmployeeMultiSelect from "@/components/EmployeeMultiSelect";
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 
 const STATUSES = Object.keys(MEASUREMENT_STATUS);
 const PRIORITY = ["normala", "urgenta", "foarte_urgenta"];
@@ -48,6 +48,7 @@ export default function AdminMeasurements() {
   const [customers, setCustomers] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(createEmptyForm());
   const [status, setStatus] = useState("");
 
@@ -77,6 +78,35 @@ export default function AdminMeasurements() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
+  const openNew = () => {
+    setEditing(null);
+    setForm(createEmptyForm());
+    setOpen(true);
+  };
+
+  const openEdit = (measurement) => {
+    setEditing(measurement);
+    setForm({
+      customer_id: measurement.customer_id || "",
+      address: measurement.address || "",
+      date: measurement.date || "",
+      time: measurement.time || "",
+      assigned_user_ids: getAssignedIds(measurement),
+      products: Array.isArray(measurement.products) ? measurement.products : [],
+      status: measurement.status || "noua",
+      priority: measurement.priority || "normala",
+      customer_notes: measurement.customer_notes || "",
+      internal_notes: measurement.internal_notes || "",
+    });
+    setOpen(true);
+  };
+
+  const closeModal = () => {
+    setOpen(false);
+    setEditing(null);
+    setForm(createEmptyForm());
+  };
+
   const submit = async (event) => {
     event.preventDefault();
 
@@ -85,15 +115,21 @@ export default function AdminMeasurements() {
       return;
     }
 
-    try {
-      await api.post("/measurements", {
-        ...form,
-        assigned_to: form.assigned_user_ids[0] || "",
-      });
+    const payload = {
+      ...form,
+      assigned_to: form.assigned_user_ids[0] || "",
+    };
 
-      toast.success("Măsurătoare adăugată");
-      setOpen(false);
-      setForm(createEmptyForm());
+    try {
+      if (editing) {
+        await api.patch(`/measurements/${editing.id}`, payload);
+        toast.success("Măsurătoarea a fost modificată");
+      } else {
+        await api.post("/measurements", payload);
+        toast.success("Măsurătoare adăugată");
+      }
+
+      closeModal();
       await load();
     } catch (error) {
       console.error("Eroare la salvarea măsurătorii:", error);
@@ -153,7 +189,7 @@ export default function AdminMeasurements() {
 
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={openNew}
             className="aj-btn-gold px-4 py-2.5 rounded-lg flex items-center gap-2"
             data-testid="btn-new-measurement"
           >
@@ -173,13 +209,14 @@ export default function AdminMeasurements() {
                 <th className="px-4 py-3">Tehnicieni</th>
                 <th className="px-4 py-3">Produse</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Acțiuni</th>
               </tr>
             </thead>
 
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
                     Nicio măsurătoare.
                   </td>
                 </tr>
@@ -227,6 +264,16 @@ export default function AdminMeasurements() {
                       ))}
                     </select>
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(measurement)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:border-aj-gold hover:text-aj-gold"
+                      data-testid={`edit-measurement-${measurement.id}`}
+                    >
+                      <Pencil size={14} /> Modifică
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -236,8 +283,8 @@ export default function AdminMeasurements() {
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
-        title="Măsurătoare nouă"
+        onClose={closeModal}
+        title={editing ? "Modifică măsurătoarea" : "Măsurătoare nouă"}
         wide
         testId="modal-measurement"
       >
@@ -304,6 +351,17 @@ export default function AdminMeasurements() {
             />
           </Field>
 
+          <Field label="Status">
+            <Select
+              value={form.status}
+              onChange={(event) => setForm({ ...form, status: event.target.value })}
+              options={STATUSES.map((item) => ({
+                value: item,
+                label: MEASUREMENT_STATUS[item].label,
+              }))}
+            />
+          </Field>
+
           <Field label="Produse (bifează)" wide>
             <div className="flex flex-wrap gap-2">
               {PRODUCT_OPTIONS.map((product) => {
@@ -343,10 +401,19 @@ export default function AdminMeasurements() {
             />
           </Field>
 
+          <Field label="Observații interne" wide>
+            <TextArea
+              value={form.internal_notes}
+              onChange={(event) =>
+                setForm({ ...form, internal_notes: event.target.value })
+              }
+            />
+          </Field>
+
           <div className="col-span-full flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={closeModal}
               className="px-4 py-2 rounded-lg border border-aj-line text-sm"
             >
               Anulează
@@ -356,7 +423,7 @@ export default function AdminMeasurements() {
               className="aj-btn-navy px-4 py-2 rounded-lg text-sm"
               data-testid="btn-save-measurement"
             >
-              Salvează
+              {editing ? "Salvează modificările" : "Salvează"}
             </button>
           </div>
         </form>
