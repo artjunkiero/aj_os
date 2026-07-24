@@ -83,60 +83,6 @@ def strip_list(docs):
     return [strip_id(d) for d in docs]
 
 
-def normalize_assigned_user_ids(payload: dict) -> list[str]:
-    """Normalize new multi-assignment and legacy single-assignment payloads."""
-    raw = payload.get("assigned_user_ids")
-    if raw is None:
-        legacy = payload.get("assigned_to")
-        raw = [legacy] if legacy else []
-    elif isinstance(raw, str):
-        raw = [raw] if raw else []
-
-    result = []
-    for value in raw or []:
-        user_id = str(value or "").strip()
-        if user_id and user_id not in result:
-            result.append(user_id)
-    return result
-
-
-def apply_assignment_fields(payload: dict) -> list[str]:
-    """Store the canonical list and keep assigned_to during the transition."""
-    assigned_user_ids = normalize_assigned_user_ids(payload)
-    payload["assigned_user_ids"] = assigned_user_ids
-    payload["assigned_to"] = assigned_user_ids[0] if assigned_user_ids else ""
-    return assigned_user_ids
-
-
-def assigned_user_query(user_id: str) -> dict:
-    """Match both new records and legacy records not migrated yet."""
-    return {
-        "$or": [
-            {"assigned_user_ids": user_id},
-            {"assigned_to": user_id},
-        ]
-    }
-
-
-async def notify_assigned_users(
-    *,
-    user_ids: list[str],
-    customer_id: str,
-    kind: str,
-    title: str,
-    body: str,
-):
-    for user_id in user_ids:
-        await create_internal_notification(
-            db,
-            user_id=user_id,
-            customer_id=customer_id,
-            kind=kind,
-            title=title,
-            body=body,
-        )
-
-
 def _gen_referral_code() -> str:
     # 8 chars, uppercase alphanumeric (no ambiguous chars)
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -701,15 +647,176 @@ async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+# ============ APPOINTMENT NOTIFICATIONS ============
+def get_assigned_user_ids(item) -> list[str]:
+    """Returnează angajații alocați, inclusiv câmpul vechi assigned_to."""
+    if isinstance(item, dict):
+        assigned_ids = item.get("assigned_user_ids") or []
+        legacy_id = item.get("assigned_to") or ""
+    else:
+        assigned_ids = getattr(item, "assigned_user_ids", []) or []
+        legacy_id = getattr(item, "assigned_to", "") or ""
+
+    result = [str(user_id) for user_id in assigned_ids if user_id]
+
+    if legacy_id and str(legacy_id) not in result:
+        result.append(str(legacy_id))
+
+    return list(dict.fromkeys(result))
+
+
+def appointment_products_text(appointment: dict) -> str:
+    products = appointment.get("products") or []
+
+    if isinstance(products, list):
+        values = []
+        for product in products:
+            if isinstance(product, dict):
+                value = (
+                    product.get("name")
+                    or product.get("product")
+                    or str(product)
+                )
+            else:
+                value = str(product)
+
+            if value:
+                values.append(value)
+
+        return ", ".join(values) if values else "Nespecificat"
+
+    return str(products) if products else "Nespecificat"
+
+
+async def notify_assigned_employees(
+    *,
+    assigned_user_ids: list[str],
+    customer: dict | None,
+    appointment: dict,
+    appointment_type: str,
+    change_type: str = "created",
+) -> list[dict]:
+    """Trimite notificare internă și WhatsApp tuturor angajaților alocați."""
+    if not assigned_user_ids:
+        return []
+
+    customer = customer or {}
+    customer_name = customer.get("name") or "Client ART JUNKIE"
+    customer_phone = customer.get("phone") or "-"
+    address = (
+        appointment.get("address")
+        or customer.get("address")
+        or "Adresa comunicată la programare"
+    )
+    date_value = str(appointment.get("date") or "")
+    time_value = str(appointment.get("time") or "")
+    date_time = f"{date_value}, ora {time_value}".strip(", ")
+    location_contact = f"{address}, telefon {customer_phone}"
+    products_text = appointment_products_text(appointment)
+
+    is_measurement = appointment_type == "measurement"
+    appointment_label = "Măsurătoare" if is_measurement else "Montaj"
+    is_rescheduled = change_type == "rescheduled"
+    action_text = (
+        "Programarea la care ești alocat a fost modificată."
+        if is_rescheduled
+        else "Ai fost alocat la o programare nouă."
+    )
+    title = (
+        f"{appointment_label} modificat(ă)"
+        if is_rescheduled
+        else f"{appointment_label} alocat(ă)"
+    )
+    notification_kind = "reschedule" if is_rescheduled else "allocation"
+
+    results = []
+
+    for employee_id in assigned_user_ids:
+        employee = await db.users.find_one(
+            {"id": employee_id},
+            {"_id": 0, "password_hash": 0},
+        )
+
+        if not employee:
+            logger.warning(
+                "Angajat negăsit pentru notificare employee_id=%s",
+                employee_id,
+            )
+            continue
+
+        await create_internal_notification(
+            db,
+            user_id=employee_id,
+            customer_id=customer.get("id", ""),
+            kind=notification_kind,
+            title=title,
+            body=(
+                f"Client: {customer_name} | "
+                f"{date_time} | {address} | "
+                f"Produse: {products_text}"
+            ),
+        )
+
+        employee_phone = str(employee.get("phone") or "").strip()
+
+        if not employee_phone:
+            logger.warning(
+                "Angajat fără telefon employee_id=%s",
+                employee_id,
+            )
+            results.append({
+                "employee_id": employee_id,
+                "status": "pending",
+                "reason": "missing_phone",
+            })
+            continue
+
+        whatsapp_result = await send_whatsapp_template(
+            phone=employee_phone,
+            template_name="programare_angajat",
+            language_code="ro",
+            parameters=[
+                employee.get("name") or "coleg",
+                action_text,
+                appointment_label,
+                customer_name,
+                date_time,
+                location_contact,
+            ],
+        )
+
+        results.append({
+            "employee_id": employee_id,
+            **whatsapp_result,
+        })
+
+        if whatsapp_result.get("status") != "sent":
+            logger.error(
+                "WhatsApp angajat eșuat employee_id=%s "
+                "appointment_type=%s result=%s",
+                employee_id,
+                appointment_type,
+                whatsapp_result,
+            )
+
+    return results
+
+
 # ============ MEASUREMENTS ============
 @api.get("/measurements")
 async def list_measurements(assigned_to: Optional[str] = None, status: Optional[str] = None,
                             mine: Optional[bool] = False, user: dict = Depends(get_current_user)):
     query = {}
     if mine:
-        query.update(assigned_user_query(user["id"]))
+        query["$or"] = [
+            {"assigned_to": user["id"]},
+            {"assigned_user_ids": user["id"]},
+        ]
     elif assigned_to:
-        query.update(assigned_user_query(assigned_to))
+        query["$or"] = [
+            {"assigned_to": assigned_to},
+            {"assigned_user_ids": assigned_to},
+        ]
     if status:
         query["status"] = status
     docs = await db.measurements.find(query, {"_id": 0}).sort("date", 1).to_list(500)
@@ -723,83 +830,56 @@ async def create_measurement(
 ):
     m = Measurement(**body.model_dump())
     measurement_data = m.model_dump()
-    assigned_user_ids = apply_assignment_fields(measurement_data)
 
-    # Folosim o copie, ca MongoDB să nu adauge _id în obiectul returnat
-    await db.measurements.insert_one(
-        measurement_data.copy()
-    )
+    await db.measurements.insert_one(measurement_data.copy())
 
     customer = await db.customers.find_one(
         {"id": m.customer_id},
         {"_id": 0},
     )
 
-    whatsapp_result = None
+    customer_whatsapp = None
 
-    if customer:
-        customer_name = (
-            customer.get("name", "").strip()
-            or "client ART JUNKIE"
-        )
-
-        customer_phone = (
-            customer.get("phone", "").strip()
-        )
-
+    if customer and customer.get("phone"):
         measurement_address = (
-            getattr(m, "address", None)
-            or customer.get("address", "")
+            m.address
+            or customer.get("address")
             or "Adresa stabilită cu echipa ART JUNKIE"
         )
 
-        if customer_phone:
-            whatsapp_result = await send_whatsapp_template(
-                phone=customer_phone,
-                template_name="programare_masuratoare",
-                language_code="ro",
-                parameters=[
-                    customer_name,
-                    str(m.date),
-                    str(m.time),
-                    str(measurement_address),
-                ],
-            )
-
-            await create_internal_notification(
-                db,
-                customer_id=m.customer_id,
-                kind="info",
-                title="Notificare WhatsApp",
-                body=(
-                    "Mesajul pentru programarea măsurătorii a fost trimis "
-                    f"către {customer_name}. "
-                    f"Status: "
-                    f"{whatsapp_result.get('status', 'necunoscut')}"
-                ),
-            )
-
-    if assigned_user_ids:
-        assigned_customer_name = (
-            customer.get("name", "")
-            if customer
-            else ""
+        customer_whatsapp = await send_whatsapp_template(
+            phone=customer["phone"],
+            template_name="programare_masuratoare",
+            language_code="ro",
+            parameters=[
+                customer.get("name") or "Client",
+                str(m.date),
+                str(m.time),
+                str(measurement_address),
+            ],
         )
 
-        await notify_assigned_users(
-            user_ids=assigned_user_ids,
-            customer_id=m.customer_id,
-            kind="allocation",
-            title="Măsurătoare alocată",
-            body=(
-                f"Client: {assigned_customer_name}, "
-                f"{m.date} {m.time}"
-            ),
-        )
+        if customer_whatsapp.get("status") != "sent":
+            logger.error(
+                "WhatsApp măsurătoare eșuat customer_id=%s result=%s",
+                m.customer_id,
+                customer_whatsapp,
+            )
+
+    employee_whatsapp = await notify_assigned_employees(
+        assigned_user_ids=get_assigned_user_ids(m),
+        customer=customer,
+        appointment=measurement_data,
+        appointment_type="measurement",
+        change_type="created",
+    )
 
     return {
         **measurement_data,
-        "whatsapp": whatsapp_result,
+        "whatsapp": {
+            "customer": customer_whatsapp,
+            "employees": employee_whatsapp,
+        },
     }
 
 
@@ -809,17 +889,20 @@ async def update_measurement(
     body: dict,
     user: dict = Depends(get_current_user),
 ):
-    body.pop("id", None)
-    body["updated_at"] = now_iso()
-
-    assignment_changed = "assigned_user_ids" in body or "assigned_to" in body
-    if assignment_changed:
-        apply_assignment_fields(body)
-
     prev = await db.measurements.find_one(
         {"id": mid},
         {"_id": 0},
     )
+
+    if not prev:
+        raise HTTPException(
+            status_code=404,
+            detail="Măsurătoare inexistentă",
+        )
+
+    body.pop("id", None)
+    body.pop("_id", None)
+    body["updated_at"] = now_iso()
 
     await db.measurements.update_one(
         {"id": mid},
@@ -831,30 +914,76 @@ async def update_measurement(
         {"_id": 0},
     )
 
-    if not doc:
-        raise HTTPException(
-            status_code=404,
-            detail="Măsurătoare inexistentă",
+    customer = await db.customers.find_one(
+        {"id": doc["customer_id"]},
+        {"_id": 0},
+    )
+
+    schedule_fields = ("date", "time", "address")
+    employee_fields = (
+        "date",
+        "time",
+        "address",
+        "products",
+        "assigned_to",
+        "assigned_user_ids",
+    )
+    schedule_changed = any(
+        field in body and prev.get(field) != doc.get(field)
+        for field in schedule_fields
+    )
+    employee_notification_changed = any(
+        field in body and prev.get(field) != doc.get(field)
+        for field in employee_fields
+    )
+
+    customer_whatsapp = None
+
+    if schedule_changed and customer and customer.get("phone"):
+        measurement_address = (
+            doc.get("address")
+            or customer.get("address")
+            or "Adresa stabilită cu echipa ART JUNKIE"
         )
 
-    # Notifică doar tehnicienii adăugați la această alocare.
-    if prev and assignment_changed:
-        previous_ids = set(normalize_assigned_user_ids(prev))
-        current_ids = normalize_assigned_user_ids(doc)
-        added_ids = [uid for uid in current_ids if uid not in previous_ids]
-        if added_ids:
-            await notify_assigned_users(
-                user_ids=added_ids,
-                customer_id=doc["customer_id"],
-                kind="allocation",
-                title="Măsurătoare alocată",
-                body=(
-                    f"{doc.get('date', '')} "
-                    f"{doc.get('time', '')}"
-                ),
+        customer_whatsapp = await send_whatsapp_template(
+            phone=customer["phone"],
+            template_name="reprogramare",
+            language_code="ro",
+            parameters=[
+                customer.get("name") or "Client",
+                str(doc.get("date", "")),
+                str(doc.get("time", "")),
+                str(measurement_address),
+            ],
+        )
+
+        if customer_whatsapp.get("status") != "sent":
+            logger.error(
+                "WhatsApp reprogramare măsurătoare eșuat "
+                "customer_id=%s result=%s",
+                doc["customer_id"],
+                customer_whatsapp,
             )
 
-    return doc
+    employee_whatsapp = []
+
+    if employee_notification_changed:
+        employee_whatsapp = await notify_assigned_employees(
+            assigned_user_ids=get_assigned_user_ids(doc),
+            customer=customer,
+            appointment=doc,
+            appointment_type="measurement",
+            change_type="rescheduled",
+        )
+
+    return {
+        **doc,
+        "whatsapp": {
+            "customer": customer_whatsapp,
+            "employees": employee_whatsapp,
+        },
+    }
 
 
 @api.delete("/measurements/{mid}")
@@ -862,13 +991,9 @@ async def delete_measurement(
     mid: str,
     user: dict = Depends(get_current_user),
 ):
-    await db.measurements.delete_one(
-        {"id": mid}
-    )
+    await db.measurements.delete_one({"id": mid})
+    return {"ok": True}
 
-    return {
-        "ok": True,
-    }
 
 # ============ INSTALLATIONS ============
 @api.get("/installations")
@@ -876,9 +1001,15 @@ async def list_installations(assigned_to: Optional[str] = None, status: Optional
                              mine: Optional[bool] = False, user: dict = Depends(get_current_user)):
     query = {}
     if mine:
-        query.update(assigned_user_query(user["id"]))
+        query["$or"] = [
+            {"assigned_to": user["id"]},
+            {"assigned_user_ids": user["id"]},
+        ]
     elif assigned_to:
-        query.update(assigned_user_query(assigned_to))
+        query["$or"] = [
+            {"assigned_to": assigned_to},
+            {"assigned_user_ids": assigned_to},
+        ]
     if status:
         query["status"] = status
     docs = await db.installations.find(query, {"_id": 0}).sort("date", 1).to_list(500)
@@ -892,59 +1023,57 @@ async def create_installation(
 ):
     inst = Installation(**body.model_dump())
     installation_data = inst.model_dump()
-    assigned_user_ids = apply_assignment_fields(installation_data)
 
-    await db.installations.insert_one(
-        installation_data.copy()
-    )
+    await db.installations.insert_one(installation_data.copy())
 
     customer = await db.customers.find_one(
         {"id": inst.customer_id},
         {"_id": 0},
     )
 
-    # Notificare internă pentru fiecare tehnician alocat
-    if assigned_user_ids:
-        await notify_assigned_users(
-            user_ids=assigned_user_ids,
-            customer_id=inst.customer_id,
-            kind="allocation",
-            title="Montaj alocat",
-            body=(
-                f"Client: "
-                f"{customer.get('name', '') if customer else ''}, "
-                f"{inst.date} {inst.time}"
-            ),
-        )
+    customer_whatsapp = None
 
-    # Notificare WhatsApp către client
     if customer and customer.get("phone"):
         installation_address = (
-            getattr(inst, "address", None)
+            inst.address
             or customer.get("address")
             or "Adresa comunicată la programare"
         )
 
-        whatsapp_result = await send_whatsapp_template(
+        customer_whatsapp = await send_whatsapp_template(
             phone=customer["phone"],
             template_name="programare_montaj",
             language_code="ro",
             parameters=[
-                customer.get("name", "Client"),
+                customer.get("name") or "Client",
                 str(inst.date),
                 str(inst.time),
                 str(installation_address),
             ],
         )
 
-        if whatsapp_result.get("status") != "sent":
+        if customer_whatsapp.get("status") != "sent":
             logger.error(
-                "WhatsApp montaj failed customer_id=%s result=%s",
+                "WhatsApp montaj eșuat customer_id=%s result=%s",
                 inst.customer_id,
-                whatsapp_result,
+                customer_whatsapp,
             )
 
-    return installation_data
+    employee_whatsapp = await notify_assigned_employees(
+        assigned_user_ids=get_assigned_user_ids(inst),
+        customer=customer,
+        appointment=installation_data,
+        appointment_type="installation",
+        change_type="created",
+    )
+
+    return {
+        **installation_data,
+        "whatsapp": {
+            "customer": customer_whatsapp,
+            "employees": employee_whatsapp,
+        },
+    }
 
 
 @api.patch("/installations/{iid}")
@@ -953,14 +1082,20 @@ async def update_installation(
     body: dict,
     user: dict = Depends(get_current_user),
 ):
+    prev = await db.installations.find_one(
+        {"id": iid},
+        {"_id": 0},
+    )
+
+    if not prev:
+        raise HTTPException(
+            status_code=404,
+            detail="Montaj inexistent",
+        )
+
     body.pop("id", None)
+    body.pop("_id", None)
     body["updated_at"] = now_iso()
-
-    assignment_changed = "assigned_user_ids" in body or "assigned_to" in body
-    if assignment_changed:
-        apply_assignment_fields(body)
-
-    prev = await db.installations.find_one({"id": iid}, {"_id": 0})
 
     await db.installations.update_one(
         {"id": iid},
@@ -972,61 +1107,68 @@ async def update_installation(
         {"_id": 0},
     )
 
-    if not doc:
-        raise HTTPException(
-            status_code=404,
-            detail="Montaj inexistent",
+    customer = await db.customers.find_one(
+        {"id": doc["customer_id"]},
+        {"_id": 0},
+    )
+
+    schedule_fields = ("date", "time", "address")
+    employee_fields = (
+        "date",
+        "time",
+        "address",
+        "products",
+        "assigned_to",
+        "assigned_user_ids",
+    )
+    schedule_changed = any(
+        field in body and prev.get(field) != doc.get(field)
+        for field in schedule_fields
+    )
+    employee_notification_changed = any(
+        field in body and prev.get(field) != doc.get(field)
+        for field in employee_fields
+    )
+
+    customer_whatsapp = None
+
+    if schedule_changed and customer and customer.get("phone"):
+        installation_address = (
+            doc.get("address")
+            or customer.get("address")
+            or "Adresa comunicată la programare"
         )
 
-    # Trimite WhatsApp dacă s-au modificat data, ora sau adresa
-    if (
-        "date" in body
-        or "time" in body
-        or "address" in body
-    ):
-        customer = await db.customers.find_one(
-            {"id": doc["customer_id"]},
-            {"_id": 0},
+        customer_whatsapp = await send_whatsapp_template(
+            phone=customer["phone"],
+            template_name="reprogramare",
+            language_code="ro",
+            parameters=[
+                customer.get("name") or "Client",
+                str(doc.get("date", "")),
+                str(doc.get("time", "")),
+                str(installation_address),
+            ],
         )
 
-        if customer and customer.get("phone"):
-            installation_address = (
-                doc.get("address")
-                or customer.get("address")
-                or "Adresa comunicată la programare"
+        if customer_whatsapp.get("status") != "sent":
+            logger.error(
+                "WhatsApp reprogramare montaj eșuat "
+                "customer_id=%s result=%s",
+                doc["customer_id"],
+                customer_whatsapp,
             )
 
-            whatsapp_result = await send_whatsapp_template(
-                phone=customer["phone"],
-                template_name="programare_montaj",
-                language_code="ro",
-                parameters=[
-                    customer.get("name", "Client"),
-                    str(doc.get("date", "")),
-                    str(doc.get("time", "")),
-                    str(installation_address),
-                ],
-            )
+    employee_whatsapp = []
 
-            if whatsapp_result.get("status") != "sent":
-                logger.error(
-                    "WhatsApp montaj failed customer_id=%s result=%s",
-                    doc["customer_id"],
-                    whatsapp_result,
-                )
-
-    if prev and assignment_changed:
-        previous_ids = set(normalize_assigned_user_ids(prev))
-        current_ids = normalize_assigned_user_ids(doc)
-        added_ids = [uid for uid in current_ids if uid not in previous_ids]
-        if added_ids:
-            await notify_assigned_users(
-                user_ids=added_ids,
-                customer_id=doc["customer_id"],
-                kind="allocation",
-                title="Montaj alocat",
-                body=f"{doc.get('date', '')} {doc.get('time', '')}",
-            )
+    if employee_notification_changed:
+        employee_whatsapp = await notify_assigned_employees(
+            assigned_user_ids=get_assigned_user_ids(doc),
+            customer=customer,
+            appointment=doc,
+            appointment_type="installation",
+            change_type="rescheduled",
+        )
 
     # Activează automat garanția la finalizare
     if (
@@ -1066,7 +1208,14 @@ async def update_installation(
                 w.model_dump().copy()
             )
 
-    return doc
+    return {
+        **doc,
+        "whatsapp": {
+            "customer": customer_whatsapp,
+            "employees": employee_whatsapp,
+        },
+    }
+
 
 @api.delete("/installations/{iid}")
 async def delete_installation(iid: str, user: dict = Depends(get_current_user)):
@@ -1179,7 +1328,7 @@ async def list_tickets(status: Optional[str] = None, mine: Optional[bool] = Fals
                        user: dict = Depends(get_current_user)):
     query = {}
     if mine:
-        query.update(assigned_user_query(user["id"]))
+        query["assigned_to"] = user["id"]
     if status:
         query["status"] = status
     docs = await db.service_tickets.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
@@ -1189,47 +1338,21 @@ async def list_tickets(status: Optional[str] = None, mine: Optional[bool] = Fals
 @api.post("/service-tickets")
 async def create_ticket(body: ServiceTicketBase, user: dict = Depends(get_current_user)):
     t = ServiceTicket(**body.model_dump())
-    ticket_data = t.model_dump()
-    assigned_user_ids = apply_assignment_fields(ticket_data)
-    await db.service_tickets.insert_one(ticket_data.copy())
-    if assigned_user_ids:
-        await notify_assigned_users(
-            user_ids=assigned_user_ids,
-            customer_id=t.customer_id,
-            kind="service",
-            title="Intervenție alocată",
-            body=t.problem,
+    await db.service_tickets.insert_one(t.model_dump())
+    if t.assigned_to:
+        await create_internal_notification(
+            db, user_id=t.assigned_to, customer_id=t.customer_id, kind="service",
+            title="Intervenție alocată", body=t.problem,
         )
-    return ticket_data
+    return t.model_dump()
 
 
 @api.patch("/service-tickets/{tid}")
 async def update_ticket(tid: str, body: dict, user: dict = Depends(get_current_user)):
     body.pop("id", None)
     body["updated_at"] = now_iso()
-    assignment_changed = "assigned_user_ids" in body or "assigned_to" in body
-    if assignment_changed:
-        apply_assignment_fields(body)
-
-    prev = await db.service_tickets.find_one({"id": tid}, {"_id": 0})
     await db.service_tickets.update_one({"id": tid}, {"$set": body})
-    doc = await db.service_tickets.find_one({"id": tid}, {"_id": 0})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Intervenție inexistentă")
-
-    if prev and assignment_changed:
-        previous_ids = set(normalize_assigned_user_ids(prev))
-        current_ids = normalize_assigned_user_ids(doc)
-        added_ids = [uid for uid in current_ids if uid not in previous_ids]
-        if added_ids:
-            await notify_assigned_users(
-                user_ids=added_ids,
-                customer_id=doc["customer_id"],
-                kind="service",
-                title="Intervenție alocată",
-                body=doc.get("problem", ""),
-            )
-    return doc
+    return await db.service_tickets.find_one({"id": tid}, {"_id": 0})
 
 
 @api.delete("/service-tickets/{tid}")
@@ -1376,17 +1499,12 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
 
     measurements_today = await db.measurements.count_documents({"date": today})
     installations_today = await db.installations.count_documents({"date": today})
-    unassigned_filter = {
-        "$and": [
-            {"$or": [
-                {"assigned_user_ids": {"$exists": False}},
-                {"assigned_user_ids": {"$size": 0}},
-            ]},
-            {"$or": [{"assigned_to": ""}, {"assigned_to": None}, {"assigned_to": {"$exists": False}}]},
-        ]
-    }
-    unassigned_measurements = await db.measurements.count_documents(unassigned_filter)
-    unassigned_installations = await db.installations.count_documents(unassigned_filter)
+    unassigned_measurements = await db.measurements.count_documents({
+        "$or": [{"assigned_to": ""}, {"assigned_to": None}]
+    })
+    unassigned_installations = await db.installations.count_documents({
+        "$or": [{"assigned_to": ""}, {"assigned_to": None}]
+    })
     late_installations = await db.installations.count_documents({
         "date": {"$lt": today},
         "status": {"$nin": ["finalizat", "anulat"]}
@@ -1431,27 +1549,10 @@ async def reports_summary(user: dict = Depends(get_current_user)):
     sources = await _to_list(db.customers.aggregate([
         {"$group": {"_id": "$source", "count": {"$sum": 1}}}
     ]))
-    # Employee performance: each assigned technician receives credit for the installation.
+    # Employee performance: installations finished by installer
     perf = await _to_list(db.installations.aggregate([
         {"$match": {"status": "finalizat"}},
-        {"$project": {
-            "assignees": {
-                "$cond": [
-                    {"$gt": [{"$size": {"$ifNull": ["$assigned_user_ids", []]}}, 0]},
-                    "$assigned_user_ids",
-                    {"$cond": [
-                        {"$and": [
-                            {"$ne": [{"$ifNull": ["$assigned_to", ""]}, ""]},
-                            {"$ne": [{"$ifNull": ["$assigned_to", None]}, None]},
-                        ]},
-                        ["$assigned_to"],
-                        [],
-                    ]},
-                ]
-            }
-        }},
-        {"$unwind": "$assignees"},
-        {"$group": {"_id": "$assignees", "count": {"$sum": 1}}},
+        {"$group": {"_id": "$assigned_to", "count": {"$sum": 1}}},
     ]))
     return {
         "leads_by_status": leads_by_status,
