@@ -23,48 +23,98 @@ const PRODUCT_TYPES = [
   {
     value: "",
     label: "— Alege tipul produsului —",
+    defaultUnit: "buc",
+    allowedUnits: ["buc"],
   },
   {
     value: "roleta",
     label: "Roletă textilă",
+    defaultUnit: "mp",
+    allowedUnits: ["mp"],
   },
   {
     value: "daynight",
     label: "Day & Night",
+    defaultUnit: "mp",
+    allowedUnits: ["mp"],
   },
   {
     value: "plisse",
     label: "Jaluzea plisse",
+    defaultUnit: "mp",
+    allowedUnits: ["mp", "buc"],
   },
   {
     value: "venetiana",
     label: "Jaluzea venețiană",
+    defaultUnit: "mp",
+    allowedUnits: ["mp"],
   },
   {
     value: "verticala",
     label: "Jaluzea verticală",
+    defaultUnit: "mp",
+    allowedUnits: ["mp"],
   },
   {
     value: "rulou",
     label: "Rulou exterior",
+    defaultUnit: "buc",
+    allowedUnits: ["buc"],
   },
   {
     value: "plasa",
     label: "Plasă insecte",
+    defaultUnit: "buc",
+    allowedUnits: ["buc"],
   },
   {
     value: "draperie",
     label: "Draperie",
+    defaultUnit: "ml",
+    allowedUnits: ["ml"],
   },
   {
     value: "perdea",
     label: "Perdea",
+    defaultUnit: "ml",
+    allowedUnits: ["ml"],
   },
   {
     value: "galerie",
     label: "Galerie",
+    defaultUnit: "buc",
+    allowedUnits: ["buc"],
+  },
+  {
+    value: "other",
+    label: "Alte produse",
+    defaultUnit: "buc",
+    allowedUnits: ["mp", "ml", "buc"],
   },
 ];
+
+const UNIT_OPTIONS = [
+  {
+    value: "mp",
+    label: "Metru pătrat (mp)",
+    priceLabel: "Lei/mp",
+  },
+  {
+    value: "ml",
+    label: "Metru liniar (ml)",
+    priceLabel: "Lei/ml",
+  },
+  {
+    value: "buc",
+    label: "Bucată",
+    priceLabel: "Lei/buc",
+  },
+];
+
+const getProductTypeConfig = (productType) =>
+  PRODUCT_TYPES.find((item) => item.value === productType) ||
+  PRODUCT_TYPES[0];
 
 const createId = () => {
   if (
@@ -84,8 +134,12 @@ const createEmptyProduct = (position = 1) => ({
   position,
 
   product_type: "",
-  product: "",
-  collection: "",
+custom_product_name: "",
+product: "",
+collection: "",
+
+unit: "buc",
+length: "",
 
   room: "",
 
@@ -137,17 +191,46 @@ const createEmptyForm = () => ({
 });
 
 const calculateProductTotal = (product) => {
-  const quantity = Math.max(
-    Number(product.quantity || 0),
-    0
-  );
+  const quantity = Number(product.quantity || 0);
+  const price = Number(product.unit_price || 0);
 
-  const unitPrice = Math.max(
-    Number(product.unit_price || 0),
-    0
-  );
+  switch (product.unit) {
+    case "mp": {
+      const width = Number(product.width || 0) / 1000;
+      const height = Number(product.height || 0) / 1000;
 
-  return quantity * unitPrice;
+      return width * height * quantity * price;
+    }
+
+    case "ml": {
+      const length = Number(product.length || 0);
+
+      return length * quantity * price;
+    }
+
+    case "buc":
+    default:
+      return quantity * price;
+  }
+};
+const calculateMeasuredQuantity = (product) => {
+  const quantity = Number(product.quantity || 0);
+
+  switch (product.unit) {
+    case "mp":
+      return (
+        (Number(product.width || 0) / 1000) *
+        (Number(product.height || 0) / 1000) *
+        quantity
+      );
+
+    case "ml":
+      return Number(product.length || 0) * quantity;
+
+    case "buc":
+    default:
+      return quantity;
+  }
 };
 
 const calculateSubtotal = (products = []) =>
@@ -496,24 +579,83 @@ export default function AdminWorkOrders() {
   };
 
   const updateProduct = (
-    productId,
-    field,
-    value
-  ) => {
-    setForm((previous) => {
-      const products =
-        previous.products.map(
-          (product) => {
-            if (
-              product.id !== productId
-            ) {
-              return product;
-            }
+  productId,
+  field,
+  value
+) => {
+  setForm((previous) => {
+    const products = previous.products.map(
+      (product) => {
+        if (product.id !== productId) {
+          return product;
+        }
 
-            const updatedProduct = {
-              ...product,
-              [field]: value,
-            };
+        let updatedProduct = {
+          ...product,
+          [field]: value,
+        };
+
+        if (field === "product_type") {
+          const productConfig =
+            getProductTypeConfig(value);
+
+          updatedProduct = {
+            ...updatedProduct,
+            unit: productConfig.defaultUnit,
+            custom_product_name:
+              value === "other"
+                ? updatedProduct.custom_product_name
+                : "",
+          };
+
+          if (
+            productConfig.defaultUnit !== "mp"
+          ) {
+            updatedProduct.width = "";
+            updatedProduct.height = "";
+          }
+
+          if (
+            productConfig.defaultUnit !== "ml"
+          ) {
+            updatedProduct.length = "";
+          }
+        }
+
+        if (field === "unit") {
+          if (value !== "mp") {
+            updatedProduct.width = "";
+            updatedProduct.height = "";
+          }
+
+          if (value !== "ml") {
+            updatedProduct.length = "";
+          }
+        }
+
+        updatedProduct.total =
+          calculateProductTotal(updatedProduct);
+
+        return updatedProduct;
+      }
+    );
+
+    return {
+      ...previous,
+
+      products,
+
+      subtotal_amount:
+        calculateSubtotal(products),
+
+      total_amount:
+        calculateOrderTotal(
+          products,
+          previous.order_discount
+        ),
+    };
+  });
+};
 
             updatedProduct.total =
               calculateProductTotal(
@@ -1459,7 +1601,27 @@ export default function AdminWorkOrders() {
                           }
                         />
                       </div>
+{product.product_type === "other" && (
+  <div>
+    <InputLabel>
+      Denumire produs
+    </InputLabel>
 
+    <TextInput
+      placeholder="Ex.: Lambriu decorativ"
+      value={
+        product.custom_product_name
+      }
+      onChange={(event) =>
+        updateProduct(
+          product.id,
+          "custom_product_name",
+          event.target.value
+        )
+      }
+    />
+  </div>
+)}
                       <div>
                         <InputLabel>
                           Camera /
@@ -1530,62 +1692,77 @@ export default function AdminWorkOrders() {
                         />
                       </div>
 
+{product.unit === "mp" && (
+  <>
+    <div>
+      <InputLabel>
+        Lățime (mm)
+      </InputLabel>
+
+      <TextInput
+        type="number"
+        min="0"
+        step="1"
+        placeholder="Ex.: 1200"
+        value={product.width}
+        onChange={(event) =>
+          updateProduct(
+            product.id,
+            "width",
+            event.target.value
+          )
+        }
+      />
+    </div>
+
+    <div>
+      <InputLabel>
+        Înălțime (mm)
+      </InputLabel>
+
+      <TextInput
+        type="number"
+        min="0"
+        step="1"
+        placeholder="Ex.: 1800"
+        value={product.height}
+        onChange={(event) =>
+          updateProduct(
+            product.id,
+            "height",
+            event.target.value
+          )
+        }
+      />
+    </div>
+  </>
+)}
+{product.unit === "ml" && (
+  <div>
+    <InputLabel>
+      Lungime (m)
+    </InputLabel>
+
+    <TextInput
+      type="number"
+      min="0"
+      step="0.01"
+      placeholder="Ex.: 6.5"
+      value={product.length}
+      onChange={(event) =>
+        updateProduct(
+          product.id,
+          "length",
+          event.target.value
+        )
+      }
+    />
+  </div>
+)}
                       <div>
-                        <InputLabel>
-                          Lățime (mm)
-                        </InputLabel>
-
-                        <TextInput
-                          type="number"
-                          min="0"
-                          step="1"
-                          placeholder="Ex.: 1200"
-                          value={
-                            product.width
-                          }
-                          onChange={(
-                            event
-                          ) =>
-                            updateProduct(
-                              product.id,
-                              "width",
-                              event.target
-                                .value
-                            )
-                          }
-                        />
-                      </div>
-
-                      <div>
-                        <InputLabel>
-                          Înălțime (mm)
-                        </InputLabel>
-
-                        <TextInput
-                          type="number"
-                          min="0"
-                          step="1"
-                          placeholder="Ex.: 1800"
-                          value={
-                            product.height
-                          }
-                          onChange={(
-                            event
-                          ) =>
-                            updateProduct(
-                              product.id,
-                              "height",
-                              event.target
-                                .value
-                            )
-                          }
-                        />
-                      </div>
-
-                      <div>
-                        <InputLabel>
-                          Cantitate (buc.)
-                        </InputLabel>
+<InputLabel>
+  Cantitate
+</InputLabel>
 
                         <TextInput
                           type="number"
@@ -1725,16 +1902,23 @@ export default function AdminWorkOrders() {
                       </div>
 
                       <div>
-                        <InputLabel>
-                          Preț unitar
-                          (lei)
-                        </InputLabel>
+<InputLabel>
+  {UNIT_OPTIONS.find(
+    (item) =>
+      item.value === (product.unit || "buc")
+  )?.priceLabel || "Lei"}
+</InputLabel>
 
                         <TextInput
                           type="number"
                           min="0"
                           step="0.01"
-                          placeholder="Lei / bucată"
+placeholder={
+  UNIT_OPTIONS.find(
+    (item) =>
+      item.value === (product.unit || "buc")
+  )?.priceLabel || "Lei"
+}
                           value={
                             product.unit_price
                           }
