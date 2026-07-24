@@ -1,5 +1,45 @@
 // Status labels and colors for ART JUNKIE OS
 
+export const STATUS_ALIASES = {
+  // Măsurători
+  noua: "nou",
+  alocata: "alocat",
+  notificata: "notificat",
+  masurata: "finalizat",
+  anulata: "anulat",
+  reprogramata: "reprogramat",
+
+  // Montaje
+  nou: "nou",
+  alocat: "alocat",
+  notificat: "notificat",
+  pregatit: "pregatit",
+  in_drum: "in_drum",
+  ajuns: "ajuns",
+  in_montaj: "in_montaj",
+  finalizat: "finalizat",
+  problema: "problema",
+  anulat: "anulat",
+  reprogramat: "reprogramat",
+
+  // Service / alte module
+  rezolvata: "rezolvat",
+  rezolvat: "rezolvat",
+  inchisa: "inchis",
+  inchis: "inchis",
+  activa: "activ",
+  expirata: "expirat",
+};
+
+export function normalizeStatusKey(status) {
+  const key = String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+
+  return STATUS_ALIASES[key] || key || "nou";
+}
+
 export const CUSTOMER_STATUS = {
   nou: { label: "Nou", cls: "bg-blue-50 text-blue-700 border-blue-200" },
   activ: { label: "Activ", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
