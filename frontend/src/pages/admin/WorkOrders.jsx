@@ -3,7 +3,7 @@ import api from "@/lib/api";
 import { toast } from "sonner";
 import { WORK_ORDER_STATUS, formatDate } from "@/lib/status";
 import Modal, { Field, TextInput, TextArea, Select } from "./_Modal";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, XCircle, RotateCcw } from "lucide-react";
 
 const STATUSES = Object.keys(WORK_ORDER_STATUS);
 
@@ -116,6 +116,7 @@ export default function AdminWorkOrders() {
       setEditing(null);
       setForm(createEmptyForm());
       await load();
+      window.dispatchEvent(new Event("dashboard:refresh"));
     } catch (error) {
       console.error("Eroare la salvarea lucrării:", error);
       toast.error(
@@ -131,11 +132,61 @@ export default function AdminWorkOrders() {
     try {
       await api.patch(`/work-orders/${id}`, patch);
       await load();
+      window.dispatchEvent(new Event("dashboard:refresh"));
     } catch (error) {
       console.error("Eroare la actualizarea lucrării:", error);
       toast.error(
         error?.response?.data?.detail ||
           "Nu am putut actualiza lucrarea"
+      );
+    }
+  };
+
+  const cancelWorkOrder = async (workOrder) => {
+    const confirmed = window.confirm(
+      `Sigur dorești să anulezi comanda „${workOrder.title || "Comandă"}”?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await api.patch(`/work-orders/${workOrder.id}`, {
+        status: "anulat",
+      });
+
+      toast.success("Comanda a fost anulată");
+      await load();
+      window.dispatchEvent(new Event("dashboard:refresh"));
+      window.dispatchEvent(new Event("calendar:refresh"));
+    } catch (error) {
+      console.error("Eroare la anularea comenzii:", error);
+      toast.error(
+        error?.response?.data?.detail ||
+          "Nu am putut anula comanda"
+      );
+    }
+  };
+
+  const reactivateWorkOrder = async (workOrder) => {
+    const confirmed = window.confirm(
+      `Sigur dorești să reactivezi comanda „${workOrder.title || "Comandă"}”?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await api.patch(`/work-orders/${workOrder.id}`, {
+        status: "lead",
+      });
+
+      toast.success("Comanda a fost reactivată");
+      await load();
+      window.dispatchEvent(new Event("dashboard:refresh"));
+    } catch (error) {
+      console.error("Eroare la reactivarea comenzii:", error);
+      toast.error(
+        error?.response?.data?.detail ||
+          "Nu am putut reactiva comanda"
       );
     }
   };
@@ -216,14 +267,21 @@ export default function AdminWorkOrders() {
                 const total = Number(workOrder.total_amount || 0);
                 const advance = Number(workOrder.advance_paid || 0);
                 const remaining = Math.max(total - advance, 0);
+                const isCancelled = workOrder.status === "anulat";
 
                 return (
                   <tr
                     key={workOrder.id}
-                    className="border-t border-aj-line"
+                    className={`border-t border-aj-line ${
+                      isCancelled ? "bg-slate-50 opacity-70" : ""
+                    }`}
                     data-testid={`wo-row-${workOrder.id}`}
                   >
-                    <td className="px-4 py-3 font-semibold text-aj-navy">
+                    <td
+                      className={`px-4 py-3 font-semibold text-aj-navy ${
+                        isCancelled ? "line-through text-slate-500" : ""
+                      }`}
+                    >
                       {workOrder.title}
                     </td>
 
@@ -267,15 +325,39 @@ export default function AdminWorkOrders() {
                     </td>
 
                     <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(workOrder)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:bg-aj-cream transition"
-                        data-testid={`btn-edit-wo-${workOrder.id}`}
-                      >
-                        <Pencil size={14} />
-                        Modifică
-                      </button>
+                      <div className="inline-flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(workOrder)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:bg-aj-cream transition"
+                          data-testid={`btn-edit-wo-${workOrder.id}`}
+                        >
+                          <Pencil size={14} />
+                          Modifică
+                        </button>
+
+                        {isCancelled ? (
+                          <button
+                            type="button"
+                            onClick={() => reactivateWorkOrder(workOrder)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+                            data-testid={`btn-reactivate-wo-${workOrder.id}`}
+                          >
+                            <RotateCcw size={14} />
+                            Reactivează
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => cancelWorkOrder(workOrder)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 transition"
+                            data-testid={`btn-cancel-wo-${workOrder.id}`}
+                          >
+                            <XCircle size={14} />
+                            Anulează
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
