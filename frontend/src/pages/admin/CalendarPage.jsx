@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
+import { normalizeStatusKey } from "@/lib/status";
 import {
   CalendarDays,
   ChevronLeft,
@@ -39,12 +40,6 @@ function ymd(date) {
   return `${year}-${month}-${day}`;
 }
 
-function normalizeStatus(status) {
-  return String(status || "programat")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_");
-}
 
 function statusLabel(status) {
   const labels = {
@@ -60,12 +55,12 @@ function statusLabel(status) {
     inchis: "Închis",
   };
 
-  const normalized = normalizeStatus(status);
+  const normalized = normalizeStatusKey(status);
   return labels[normalized] || String(status || "Programat");
 }
 
 function eventClasses(event) {
-  const status = normalizeStatus(event.status);
+  const status = normalizeStatusKey(event.status);
 
   if (status === "anulat") {
     return "bg-slate-100 text-slate-500 border-slate-300 line-through opacity-80";
