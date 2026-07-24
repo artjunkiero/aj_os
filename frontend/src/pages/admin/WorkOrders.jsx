@@ -9,13 +9,64 @@ const STATUSES = Object.keys(WORK_ORDER_STATUS);
 
 const createEmptyForm = () => ({
   customer_id: "",
+
+  order_number: "",
+  order_date: new Date().toISOString().substring(0, 10),
+  delivery_date: "",
+
   title: "",
+
   total_amount: 0,
   advance_paid: 0,
+
   status: "lead",
+
   notes: "",
-  products: [],
+
+  products: [
+    {
+      id: Date.now(),
+
+      room: "",
+
+      product: "",
+
+      description: "",
+
+      width: "",
+
+      height: "",
+
+      quantity: 1,
+
+      material: "",
+
+      color: "",
+
+      unit_price: 0,
+
+      discount: 0,
+
+      total: 0,
+
+      notes: "",
+    },
+  ],
 });
+const calculateProductTotal = (product) => {
+  const qty = Number(product.quantity || 0);
+  const price = Number(product.unit_price || 0);
+  const discount = Number(product.discount || 0);
+
+  return qty * price - discount;
+};
+
+const calculateOrderTotal = (products) => {
+  return products.reduce(
+    (sum, p) => sum + calculateProductTotal(p),
+    0
+  );
+};
 
 export default function AdminWorkOrders() {
   const [rows, setRows] = useState([]);
@@ -25,6 +76,69 @@ export default function AdminWorkOrders() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(createEmptyForm());
   const [status, setStatus] = useState("");
+  const addProduct = () => {
+  setForm((prev) => ({
+    ...prev,
+    products: [
+      ...prev.products,
+      {
+        id: Date.now(),
+
+        room: "",
+
+        product: "",
+
+        description: "",
+
+        width: "",
+
+        height: "",
+
+        quantity: 1,
+
+        material: "",
+
+        color: "",
+
+        unit_price: 0,
+
+        discount: 0,
+
+        total: 0,
+
+        notes: "",
+      },
+    ],
+  }));
+};
+
+const removeProduct = (id) => {
+  setForm((prev) => ({
+    ...prev,
+    products: prev.products.filter((p) => p.id !== id),
+  }));
+};
+
+const updateProduct = (id, field, value) => {
+  const products = form.products.map((product) => {
+    if (product.id !== id) return product;
+
+    const updated = {
+      ...product,
+      [field]: value,
+    };
+
+    updated.total = calculateProductTotal(updated);
+
+    return updated;
+  });
+
+  setForm({
+    ...form,
+    products,
+    total_amount: calculateOrderTotal(products),
+  });
+};
 
   const load = async () => {
     try {
