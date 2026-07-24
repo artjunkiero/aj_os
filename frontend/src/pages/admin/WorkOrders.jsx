@@ -10,6 +10,7 @@ const STATUSES = Object.keys(WORK_ORDER_STATUS);
 const createEmptyForm = () => ({
   customer_id: "",
 
+  // Date comandă
   order_number: "",
   order_date: new Date().toISOString().substring(0, 10),
   delivery_date: "",
@@ -25,30 +26,41 @@ const createEmptyForm = () => ({
 
   products: [
     {
-      id: Date.now(),
+id: crypto.randomUUID(),
 
+      // Identificare
+      position: 1,
+
+      // Tip produs
+      product_type: "",
+      product: "",
+      collection: "",
+
+      // Locație
       room: "",
 
-      product: "",
-
-      description: "",
-
+      // Dimensiuni
       width: "",
-
       height: "",
-
       quantity: 1,
 
+      // Materiale
       material: "",
+      fabric_color: "",
+      mechanism_color: "",
 
-      color: "",
+      // Opțiuni
+      control_side: "dreapta",
+      cassette: false,
+      guides: false,
+      motorized: false,
 
+      // Prețuri
       unit_price: 0,
-
       discount: 0,
-
       total: 0,
 
+      // Observații
       notes: "",
     },
   ],
@@ -587,15 +599,36 @@ const updateProduct = (id, field, value) => {
                 className="border rounded-xl p-4 mb-4 bg-white"
             >
 
-                <div className="grid grid-cols-4 gap-3">
+className="grid grid-cols-2 lg:grid-cols-4 gap-3"
+              
+          <Select
+    value={product.product_type}
+    onChange={(e)=>
+        updateProduct(product.id,"product_type",e.target.value)
+    }
 
-                    <TextInput
-                        placeholder="Produs"
-                        value={product.product}
-                        onChange={(e)=>
-                            updateProduct(product.id,"product",e.target.value)
-                        }
-                    />
+    options={[
+        {value:"",label:"Tip produs"},
+
+        {value:"roleta",label:"Roletă textilă"},
+
+        {value:"daynight",label:"Day & Night"},
+
+        {value:"plisse",label:"Plisse"},
+
+        {value:"venetiana",label:"Jaluzea venețiană"},
+
+        {value:"verticala",label:"Jaluzea verticală"},
+
+        {value:"rulou",label:"Rulou exterior"},
+
+        {value:"plasa",label:"Plasă insecte"},
+
+        {value:"draperie",label:"Draperie"},
+
+        {value:"perdea",label:"Perdea"},
+    ]}
+/>
 
                     <TextInput
                         placeholder="Camera"
