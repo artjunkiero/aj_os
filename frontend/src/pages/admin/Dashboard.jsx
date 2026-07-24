@@ -1,9 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
-import { Badge, MEASUREMENT_STATUS, INSTALLATION_STATUS, WORK_ORDER_STATUS, formatDate } from "@/lib/status";
 import {
-  Ruler, Wrench, AlertTriangle, UserPlus, FileText, Factory, Truck, ShieldCheck, LifeBuoy, Users
+  Badge,
+  MEASUREMENT_STATUS,
+  INSTALLATION_STATUS,
+  WORK_ORDER_STATUS,
+  formatDate,
+} from "@/lib/status";
+import {
+  Ruler,
+  Wrench,
+  AlertTriangle,
+  UserPlus,
+  FileText,
+  Factory,
+  Truck,
+  ShieldCheck,
+  LifeBuoy,
+  Users,
 } from "lucide-react";
 
 const KPIS = [
@@ -20,6 +35,31 @@ const KPIS = [
   { key: "total_customers", label: "Clienți totali", icon: Users, tint: "text-slate-700 bg-slate-50 border-slate-100" },
 ];
 
+function localYmd(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeStatus(status) {
+  return String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
+function isCancelled(item) {
+  const status = normalizeStatus(item?.status);
+  return status === "anulat" || status === "anulata";
+}
+
+function byDateAndTime(a, b) {
+  const aValue = `${a?.date || "9999-12-31"} ${a?.time || "23:59"}`;
+  const bValue = `${b?.date || "9999-12-31"} ${b?.time || "23:59"}`;
+  return aValue.localeCompare(bValue);
+}
+
 export default function AdminDashboard() {
   const nav = useNavigate();
   const [stats, setStats] = useState({});
@@ -29,7 +69,9 @@ export default function AdminDashboard() {
   const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
-    (async () => {
+    let active = true;
+
+    const loadDashboard = async () => {
       try {
         const [s, m, i, w, n] = await Promise.all([
           api.get("/dashboard/stats"),
@@ -38,24 +80,63 @@ export default function AdminDashboard() {
           api.get("/work-orders"),
           api.get("/notifications"),
         ]);
-        setStats(s.data || {});
-        setMeasurements((m.data || []).slice(0, 6));
-        setInstallations((i.data || []).slice(0, 6));
+
+        if (!active) return;
+
+        const allMeasurements = m.data || [];
+        const allInstallations = i.data || [];
+        const today = localYmd();
+
+        const activeMeasurements = allMeasurements
+          .filter((item) => !isCancelled(item))
+          .sort(byDateAndTime);
+
+        const activeInstallations = allInstallations
+          .filter((item) => !isCancelled(item))
+          .sort(byDateAndTime);
+
+        setStats({
+          ...(s.data || {}),
+          measurements_today: activeMeasurements.filter(
+            (item) => item.date === today
+          ).length,
+          installations_today: activeInstallations.filter(
+            (item) => item.date === today
+          ).length,
+        });
+
+        setMeasurements(activeMeasurements.slice(0, 6));
+        setInstallations(activeInstallations.slice(0, 6));
         setWorkOrders((w.data || []).slice(0, 6));
         setNotifications((n.data || []).slice(0, 5));
-      } catch (e) {
-        // guard rendered via loading
+      } catch (error) {
+        console.error("Eroare la încărcarea dashboard-ului:", error);
       }
-    })();
+    };
+
+    loadDashboard();
+
+    const onRefresh = () => loadDashboard();
+    window.addEventListener("calendar:refresh", onRefresh);
+    window.addEventListener("dashboard:refresh", onRefresh);
+
+    return () => {
+      active = false;
+      window.removeEventListener("calendar:refresh", onRefresh);
+      window.removeEventListener("dashboard:refresh", onRefresh);
+    };
   }, []);
 
   return (
     <div className="space-y-8 animate-fade-in" data-testid="admin-dashboard">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.28em] text-aj-navy/60 mb-1">Panou principal</div>
+          <div className="text-xs uppercase tracking-[0.28em] text-aj-navy/60 mb-1">
+            Panou principal
+          </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-aj-navy">
-            Vizibilitate totală. <span className="text-aj-gold">Decizii rapide.</span>
+            Vizibilitate totală.{" "}
+            <span className="text-aj-gold">Decizii rapide.</span>
           </h1>
         </div>
       </div>
@@ -64,14 +145,18 @@ export default function AdminDashboard() {
         {KPIS.map((k) => (
           <div
             key={k.key}
-            className={`aj-card p-4 flex items-start gap-3 hover:-translate-y-0.5 transition-transform`}
+            className="aj-card p-4 flex items-start gap-3 hover:-translate-y-0.5 transition-transform"
             data-testid={`kpi-${k.key}`}
           >
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center border ${k.tint}`}>
+            <div
+              className={`w-10 h-10 rounded-lg flex items-center justify-center border ${k.tint}`}
+            >
               <k.icon size={18} />
             </div>
             <div className="min-w-0">
-              <div className="text-2xl font-extrabold text-aj-navy leading-none">{stats[k.key] ?? 0}</div>
+              <div className="text-2xl font-extrabold text-aj-navy leading-none">
+                {stats[k.key] ?? 0}
+              </div>
               <div className="text-xs text-slate-500 mt-1">{k.label}</div>
             </div>
           </div>
@@ -82,20 +167,41 @@ export default function AdminDashboard() {
         <div className="aj-card p-5 xl:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-bold text-aj-navy">Măsurători apropiate</h3>
-              <p className="text-xs text-slate-500">Ultimele programări</p>
+              <h3 className="text-lg font-bold text-aj-navy">
+                Măsurători apropiate
+              </h3>
+              <p className="text-xs text-slate-500">
+                Programări active, fără cele anulate
+              </p>
             </div>
-            <button className="text-sm text-aj-navy hover:text-aj-gold font-semibold" onClick={() => nav("/admin/masuratori")} data-testid="link-measurements">
+            <button
+              className="text-sm text-aj-navy hover:text-aj-gold font-semibold"
+              onClick={() => nav("/admin/masuratori")}
+              data-testid="link-measurements"
+            >
               Vezi tot →
             </button>
           </div>
+
           <div className="divide-y divide-aj-line">
-            {measurements.length === 0 && <div className="py-6 text-sm text-slate-400 text-center">Nicio măsurătoare programată.</div>}
+            {measurements.length === 0 && (
+              <div className="py-6 text-sm text-slate-400 text-center">
+                Nicio măsurătoare programată.
+              </div>
+            )}
+
             {measurements.map((m) => (
-              <div key={m.id} className="py-3 flex items-center justify-between gap-3">
+              <div
+                key={m.id}
+                className="py-3 flex items-center justify-between gap-3"
+              >
                 <div className="min-w-0">
-                  <div className="font-semibold text-aj-navy truncate">{m.address || "-"}</div>
-                  <div className="text-xs text-slate-500">{formatDate(m.date)} · {m.time}</div>
+                  <div className="font-semibold text-aj-navy truncate">
+                    {m.address || "-"}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {formatDate(m.date)} · {m.time}
+                  </div>
                 </div>
                 <Badge map={MEASUREMENT_STATUS} value={m.status} />
               </div>
@@ -106,15 +212,25 @@ export default function AdminDashboard() {
         <div className="aj-card p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-bold text-aj-navy">Notificări recente</h3>
+              <h3 className="text-lg font-bold text-aj-navy">
+                Notificări recente
+              </h3>
               <p className="text-xs text-slate-500">Activitate internă</p>
             </div>
           </div>
+
           <div className="divide-y divide-aj-line">
-            {notifications.length === 0 && <div className="py-6 text-sm text-slate-400 text-center">Nicio notificare.</div>}
+            {notifications.length === 0 && (
+              <div className="py-6 text-sm text-slate-400 text-center">
+                Nicio notificare.
+              </div>
+            )}
+
             {notifications.map((n) => (
               <div key={n.id} className="py-3">
-                <div className="font-semibold text-aj-navy text-sm">{n.title}</div>
+                <div className="font-semibold text-aj-navy text-sm">
+                  {n.title}
+                </div>
                 <div className="text-xs text-slate-500 mt-0.5">{n.body}</div>
               </div>
             ))}
@@ -125,16 +241,42 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="aj-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-aj-navy">Montaje recente</h3>
-            <button className="text-sm text-aj-navy hover:text-aj-gold font-semibold" onClick={() => nav("/admin/montaj")} data-testid="link-installations">Vezi tot →</button>
+            <div>
+              <h3 className="text-lg font-bold text-aj-navy">
+                Montaje apropiate
+              </h3>
+              <p className="text-xs text-slate-500">
+                Programări active, fără cele anulate
+              </p>
+            </div>
+            <button
+              className="text-sm text-aj-navy hover:text-aj-gold font-semibold"
+              onClick={() => nav("/admin/montaj")}
+              data-testid="link-installations"
+            >
+              Vezi tot →
+            </button>
           </div>
+
           <div className="divide-y divide-aj-line">
-            {installations.length === 0 && <div className="py-6 text-sm text-slate-400 text-center">Fără montaje.</div>}
+            {installations.length === 0 && (
+              <div className="py-6 text-sm text-slate-400 text-center">
+                Fără montaje.
+              </div>
+            )}
+
             {installations.map((i) => (
-              <div key={i.id} className="py-3 flex items-center justify-between gap-3">
+              <div
+                key={i.id}
+                className="py-3 flex items-center justify-between gap-3"
+              >
                 <div className="min-w-0">
-                  <div className="font-semibold text-aj-navy truncate">{i.address || "-"}</div>
-                  <div className="text-xs text-slate-500">{formatDate(i.date)} · {i.time}</div>
+                  <div className="font-semibold text-aj-navy truncate">
+                    {i.address || "-"}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {formatDate(i.date)} · {i.time}
+                  </div>
                 </div>
                 <Badge map={INSTALLATION_STATUS} value={i.status} />
               </div>
@@ -144,16 +286,37 @@ export default function AdminDashboard() {
 
         <div className="aj-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-aj-navy">Lucrări în lucru</h3>
-            <button className="text-sm text-aj-navy hover:text-aj-gold font-semibold" onClick={() => nav("/admin/lucrari")} data-testid="link-work-orders">Vezi tot →</button>
+            <h3 className="text-lg font-bold text-aj-navy">
+              Lucrări în lucru
+            </h3>
+            <button
+              className="text-sm text-aj-navy hover:text-aj-gold font-semibold"
+              onClick={() => nav("/admin/lucrari")}
+              data-testid="link-work-orders"
+            >
+              Vezi tot →
+            </button>
           </div>
+
           <div className="divide-y divide-aj-line">
-            {workOrders.length === 0 && <div className="py-6 text-sm text-slate-400 text-center">Nicio lucrare.</div>}
+            {workOrders.length === 0 && (
+              <div className="py-6 text-sm text-slate-400 text-center">
+                Nicio lucrare.
+              </div>
+            )}
+
             {workOrders.map((w) => (
-              <div key={w.id} className="py-3 flex items-center justify-between gap-3">
+              <div
+                key={w.id}
+                className="py-3 flex items-center justify-between gap-3"
+              >
                 <div className="min-w-0">
-                  <div className="font-semibold text-aj-navy truncate">{w.title || "Comandă"}</div>
-                  <div className="text-xs text-slate-500">{Number(w.total_amount || 0).toLocaleString("ro-RO")} lei</div>
+                  <div className="font-semibold text-aj-navy truncate">
+                    {w.title || "Comandă"}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {Number(w.total_amount || 0).toLocaleString("ro-RO")} lei
+                  </div>
                 </div>
                 <Badge map={WORK_ORDER_STATUS} value={w.status} />
               </div>
