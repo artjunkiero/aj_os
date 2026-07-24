@@ -599,7 +599,7 @@ const updateProduct = (id, field, value) => {
                 className="border rounded-xl p-4 mb-4 bg-white"
             >
 
-className="grid grid-cols-2 lg:grid-cols-4 gap-3"
+<div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               
           <Select
     value={product.product_type}
