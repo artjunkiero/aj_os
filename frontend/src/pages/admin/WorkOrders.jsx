@@ -633,29 +633,6 @@ export default function AdminWorkOrders() {
           }
         }
 
-        updatedProduct.total =
-          calculateProductTotal(updatedProduct);
-
-        return updatedProduct;
-      }
-    );
-
-    return {
-      ...previous,
-
-      products,
-
-      subtotal_amount:
-        calculateSubtotal(products),
-
-      total_amount:
-        calculateOrderTotal(
-          products,
-          previous.order_discount
-        ),
-    };
-  });
-};
 
             updatedProduct.total =
               calculateProductTotal(
