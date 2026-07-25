@@ -929,7 +929,21 @@ export default function AdminWorkOrders() {
       );
     }
   };
+const printClientOrder = (workOrder) => {
+  const customer = customers.find(
+    (c) => c.id === workOrder.customer_id
+  );
 
+  generateClientOrderDocument(workOrder, customer);
+};
+
+const printProductionSheet = (workOrder) => {
+  const customer = customers.find(
+    (c) => c.id === workOrder.customer_id
+  );
+
+  generateProductionSheetDocument(workOrder, customer);
+};
   const reactivateWorkOrder =
     async (workOrder) => {
       const confirmed =
@@ -1290,65 +1304,62 @@ export default function AdminWorkOrders() {
                       </td>
 
                       <td className="px-4 py-3 text-right">
-                        <div className="inline-flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openEditModal(
-                                workOrder
-                              )
-                            }
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:bg-aj-cream transition"
-                          >
-                            <Pencil
-                              size={14}
-                            />
+                       <div className="inline-flex items-center justify-end gap-2">
 
-                            Modifică
-                          </button>
+  <details className="relative">
+    <summary className="list-none cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:bg-aj-cream transition">
+      📄 Documente
+    </summary>
 
-                          {isCancelled ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                reactivateWorkOrder(
-                                  workOrder
-                                )
-                              }
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-700"
-                            >
-                              <RotateCcw
-                                size={14}
-                              />
+    <div className="absolute right-0 mt-2 w-60 rounded-lg border border-aj-line bg-white shadow-xl z-50">
 
-                              Reactivează
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                cancelWorkOrder(
-                                  workOrder
-                                )
-                              }
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700"
-                            >
-                              <XCircle
-                                size={14}
-                              />
+      <button
+        type="button"
+        onClick={() => printClientOrder(workOrder)}
+        className="block w-full text-left px-4 py-2 hover:bg-aj-cream"
+      >
+        📄 Bon comandă client
+      </button>
 
-                              Anulează
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-              )}
-            </tbody>
-          </table>
-        </div>
+      <button
+        type="button"
+        onClick={() => printProductionSheet(workOrder)}
+        className="block w-full text-left px-4 py-2 hover:bg-aj-cream"
+      >
+        🏭 Fișă producție
+      </button>
+
+    </div>
+  </details>
+
+  <button
+    type="button"
+    onClick={() => openEditModal(workOrder)}
+    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:bg-aj-cream transition"
+  >
+    <Pencil size={14} />
+    Modifică
+  </button>
+
+  {isCancelled ? (
+    <button
+      type="button"
+      onClick={() => reactivateWorkOrder(workOrder)}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+    >
+      <RotateCcw size={14} />
+      Reactivează
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={() => cancelWorkOrder(workOrder)}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 transition"
+    >
+      <XCircle size={14} />
+      Anulează
+    </button>
+  )}
       </div>
 
       <Modal
