@@ -1360,6 +1360,15 @@ const printProductionSheet = (workOrder) => {
       Anulează
     </button>
   )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <Modal
