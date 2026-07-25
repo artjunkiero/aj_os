@@ -2,7 +2,7 @@ import {
   generateClientOrderDocument,
   generateProductionSheetDocument,
 } from "@/lib/workOrderDocuments";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { WORK_ORDER_STATUS, formatDate } from "@/lib/status";
@@ -19,7 +19,6 @@ import {
   XCircle,
   RotateCcw,
   Search,
-  Trash2,
 } from "lucide-react";
 
 const STATUSES = Object.keys(WORK_ORDER_STATUS);
@@ -89,13 +88,13 @@ const PRODUCT_TYPES = [
     value: "galerie",
     label: "Galerie",
     defaultUnit: "buc",
-    allowedUnits: ["buc"],
+    allowedUnits: ["buc", "ml", "set"],
   },
   {
     value: "other",
     label: "Alte produse",
     defaultUnit: "buc",
-    allowedUnits: ["mp", "ml", "buc"],
+    allowedUnits: ["mp", "ml", "buc", "set"],
   },
 ];
 
@@ -114,6 +113,11 @@ const UNIT_OPTIONS = [
     value: "buc",
     label: "Bucată",
     priceLabel: "Lei/buc",
+  },
+  {
+    value: "set",
+    label: "Set",
+    priceLabel: "Lei/set",
   },
 ];
 
@@ -213,31 +217,12 @@ const calculateProductTotal = (product) => {
       return length * quantity * price;
     }
 
+    case "set":
     case "buc":
     default:
       return quantity * price;
   }
 };
-const calculateMeasuredQuantity = (product) => {
-  const quantity = Number(product.quantity || 0);
-
-  switch (product.unit) {
-    case "mp":
-      return (
-        (Number(product.width || 0) / 1000) *
-        (Number(product.height || 0) / 1000) *
-        quantity
-      );
-
-    case "ml":
-      return Number(product.length || 0) * quantity;
-
-    case "buc":
-    default:
-      return quantity;
-  }
-};
-
 const calculateSubtotal = (products = []) =>
   products.reduce(
     (sum, product) =>
@@ -336,6 +321,8 @@ export default function AdminWorkOrders() {
   const [search, setSearch] =
     useState("");
 
+  const newProductIdRef = useRef(null);
+
   const load = async () => {
     try {
       const [
@@ -378,6 +365,34 @@ export default function AdminWorkOrders() {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
+
+  useEffect(() => {
+    const productId = newProductIdRef.current;
+
+    if (!open || !productId) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const productElement = document.getElementById(
+        `product-card-${productId}`
+      );
+
+      productElement?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+
+      const firstInput = productElement?.querySelector(
+        "select, input, textarea"
+      );
+
+      firstInput?.focus?.();
+      newProductIdRef.current = null;
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [form.products.length, open]);
 
   const customerName = (customerId) =>
     customers.find(
@@ -526,15 +541,20 @@ export default function AdminWorkOrders() {
   };
 
   const addProduct = () => {
+    const newProduct = createEmptyProduct(
+      form.products.length + 1
+    );
+
+    newProductIdRef.current = newProduct.id;
+
     setForm((previous) => ({
       ...previous,
-
       products: [
         ...previous.products,
-
-        createEmptyProduct(
-          previous.products.length + 1
-        ),
+        {
+          ...newProduct,
+          position: previous.products.length + 1,
+        },
       ],
     }));
   };
@@ -1533,20 +1553,22 @@ const printProductionSheet = (workOrder) => {
               </button>
             </div>
 
-<div className="space-y-4">
-  {form.products.map((product, productIndex) => (
-    <ProductCard
-      key={product.id}
-      product={product}
-      productIndex={productIndex}
-      productTypes={PRODUCT_TYPES}
-      unitOptions={UNIT_OPTIONS}
-      updateProduct={updateProduct}
-      removeProduct={removeProduct}
-      formatMoney={formatMoney}
-    />
-  ))}
-</div>
+            <div className="space-y-4">
+              {form.products.map((product, productIndex) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  productIndex={productIndex}
+                  productTypes={PRODUCT_TYPES}
+                  unitOptions={UNIT_OPTIONS}
+                  updateProduct={updateProduct}
+                  removeProduct={removeProduct}
+                  formatMoney={formatMoney}
+                />
+              ))}
+            </div>
+          </div>
+
           <div className="col-span-full border-t border-aj-line pt-5 mt-2">
             <h3 className="font-bold text-lg text-aj-navy mb-1">
               Situație financiară
