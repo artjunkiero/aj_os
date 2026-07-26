@@ -100,9 +100,9 @@ function normalizeDimension(
       dimension.notes ?? "",
 
     execution_height:
-      dimension.execution_height ??
-      dimension.executionHeight ??
-      dimension.height ??
+      dimension.execution_height ||
+      dimension.executionHeight ||
+      dimension.height ||
       "",
 
     track_length:
@@ -439,9 +439,8 @@ export default function ProductDimensions({
             ) {
               const roundedMaterial =
                 Math.round(
-                  calculatedMaterial *
-                    1000
-                ) / 1000;
+                  calculatedMaterial
+                );
 
               updatedDimension.material_length =
                 String(
@@ -585,10 +584,19 @@ export default function ProductDimensions({
             (length / 1000) *
             quantity;
 
-          accumulator.totalMp +=
-            (width / 1000) *
-            (height / 1000) *
-            quantity;
+          if (unit === "mp") {
+            const pricing =
+              calculateMpDimension(
+                product,
+                dimension
+              );
+
+            accumulator.realMp +=
+              pricing.realAreaTotalMp;
+
+            accumulator.billableMp +=
+              pricing.billableAreaTotalMp;
+          }
 
           if (
             curtainProduct
@@ -606,13 +614,16 @@ export default function ProductDimensions({
         {
           quantity: 0,
           totalMl: 0,
-          totalMp: 0,
+          realMp: 0,
+          billableMp: 0,
           calculatedCurtainMl: 0,
         }
       ),
     [
       dimensions,
       curtainProduct,
+      product,
+      unit,
     ]
   );
 
@@ -621,7 +632,7 @@ export default function ProductDimensions({
       switch (unit) {
         case "mp":
           return `${formatNumber(
-            totals.totalMp,
+            totals.billableMp,
             3
           )} mp`;
 
