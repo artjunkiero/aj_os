@@ -1,5 +1,8 @@
 import React, { useMemo } from "react";
 import { Trash2 } from "lucide-react";
+
+import ProductDimensions from "./ProductDimensions";
+
 import {
   TextInput,
   TextArea,
@@ -50,7 +53,7 @@ function InputLabel({
   optional = false,
 }) {
   return (
-    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+    <label className="mb-1.5 block text-xs font-semibold text-slate-600">
       {children}
 
       {optional && (
@@ -73,7 +76,7 @@ function SectionTitle({
       </div>
 
       {description && (
-        <div className="text-xs text-slate-400 mt-0.5">
+        <div className="mt-0.5 text-xs text-slate-400">
           {description}
         </div>
       )}
@@ -408,113 +411,13 @@ export default function ProductCard({
         </section>
 
         {hasSelectedProductType && (
-          <section className="grid grid-cols-1 gap-4 border-t border-aj-line pt-5 md:grid-cols-2 lg:grid-cols-4">
-            <SectionTitle description="Completează dimensiunea și cantitatea facturată.">
-              Dimensiuni și cantitate
-            </SectionTitle>
-
-            {product.unit === "mp" && (
-              <>
-                <div>
-                  <InputLabel>
-                    Lățime (mm)
-                  </InputLabel>
-
-                  <TextInput
-                    type="number"
-                    min="0"
-                    step="1"
-                    inputMode="decimal"
-                    placeholder="Ex.: 1200"
-                    value={product.width}
-                    onChange={(event) =>
-                      updateProduct(
-                        product.id,
-                        "width",
-                        event.target.value
-                      )
-                    }
-                  />
-                </div>
-
-                <div>
-                  <InputLabel>
-                    Înălțime (mm)
-                  </InputLabel>
-
-                  <TextInput
-                    type="number"
-                    min="0"
-                    step="1"
-                    inputMode="decimal"
-                    placeholder="Ex.: 1800"
-                    value={product.height}
-                    onChange={(event) =>
-                      updateProduct(
-                        product.id,
-                        "height",
-                        event.target.value
-                      )
-                    }
-                  />
-                </div>
-              </>
-            )}
-
-            {product.unit === "ml" && (
-              <div>
-                <InputLabel>
-                  Lungime (m)
-                </InputLabel>
-
-                <TextInput
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputMode="decimal"
-                  placeholder="Ex.: 6.50"
-                  value={product.length}
-                  onChange={(event) =>
-                    updateProduct(
-                      product.id,
-                      "length",
-                      event.target.value
-                    )
-                  }
-                />
-              </div>
-            )}
-
-            <div>
-              <InputLabel>
-                {product.unit === "buc"
-                  ? "Număr bucăți"
-                  : product.unit ===
-                      "set"
-                    ? "Număr seturi"
-                    : "Cantitate"}
-              </InputLabel>
-
-              <TextInput
-                type="number"
-                min="1"
-                step="1"
-                inputMode="numeric"
-                placeholder={
-                  product.unit === "set"
-                    ? "Ex.: 2 seturi"
-                    : "Ex.: 1"
-                }
-                value={product.quantity}
-                onChange={(event) =>
-                  updateProduct(
-                    product.id,
-                    "quantity",
-                    event.target.value
-                  )
-                }
-              />
-            </div>
+          <section className="border-t border-aj-line pt-5">
+            <ProductDimensions
+              product={product}
+              updateProduct={
+                updateProduct
+              }
+            />
           </section>
         )}
 
