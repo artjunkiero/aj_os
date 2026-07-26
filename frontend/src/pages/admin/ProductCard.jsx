@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 
 import ProductDimensions from "./ProductDimensions";
 
@@ -9,20 +9,7 @@ import {
   Select,
 } from "./_Modal";
 
-const CONTROL_SIDE_OPTIONS = [
-  {
-    value: "dreapta",
-    label: "Dreapta",
-  },
-  {
-    value: "stanga",
-    label: "Stânga",
-  },
-  {
-    value: "fara",
-    label: "Fără acționare",
-  },
-];
+const NEW_PRODUCT_VALUE = "__new_product__";
 
 const PRODUCT_GROUPS = {
   shading: [
@@ -34,24 +21,14 @@ const PRODUCT_GROUPS = {
     "rulou",
   ],
 
-  textile: [
-    "perdea",
-    "draperie",
-  ],
+  textile: ["perdea", "draperie"],
 
-  insectScreens: [
-    "plasa",
-  ],
+  insectScreens: ["plasa"],
 
-  hardware: [
-    "galerie",
-  ],
+  hardware: ["galerie"],
 };
 
-function InputLabel({
-  children,
-  optional = false,
-}) {
+function InputLabel({ children, optional = false }) {
   return (
     <label className="mb-1.5 block text-xs font-semibold text-slate-600">
       {children}
@@ -65,10 +42,7 @@ function InputLabel({
   );
 }
 
-function SectionTitle({
-  children,
-  description,
-}) {
+function SectionTitle({ children, description }) {
   return (
     <div className="col-span-full">
       <div className="text-sm font-bold text-aj-navy">
@@ -86,38 +60,17 @@ function SectionTitle({
 
 function getProductPlaceholder(productType) {
   const placeholders = {
-    roleta:
-      "Ex.: Roletă blackout premium",
-
-    daynight:
-      "Ex.: Day & Night Elegance",
-
-    plisse:
-      "Ex.: Plisse blackout",
-
-    venetiana:
-      "Ex.: Venețiană aluminiu 25 mm",
-
-    verticala:
-      "Ex.: Jaluzea verticală office",
-
-    rulou:
-      "Ex.: Rulou exterior aluminiu",
-
-    plasa:
-      "Ex.: Plasă cu balamale",
-
-    perdea:
-      "Ex.: Perdea voal premium",
-
-    draperie:
-      "Ex.: Draperie blackout",
-
-    galerie:
-      "Ex.: Galerie simplă 25 mm",
-
-    other:
-      "Ex.: Produs personalizat",
+    roleta: "Ex.: Roletă blackout premium",
+    daynight: "Ex.: Day & Night Elegance",
+    plisse: "Ex.: Plisse blackout",
+    venetiana: "Ex.: Venețiană aluminiu 25 mm",
+    verticala: "Ex.: Jaluzea verticală office",
+    rulou: "Ex.: Rulou exterior aluminiu",
+    plasa: "Ex.: Plasă cu balamale",
+    perdea: "Ex.: Perdea voal premium",
+    draperie: "Ex.: Draperie blackout",
+    galerie: "Ex.: Galerie simplă 25 mm",
+    other: "Ex.: Panou decorativ personalizat",
   };
 
   return (
@@ -128,20 +81,11 @@ function getProductPlaceholder(productType) {
 
 function getMaterialPlaceholder(productType) {
   const placeholders = {
-    perdea:
-      "Ex.: Voal, in, organza",
-
-    draperie:
-      "Ex.: Catifea, blackout, dimout",
-
-    plasa:
-      "Ex.: Fibră de sticlă gri",
-
-    galerie:
-      "Ex.: Aluminiu, oțel, lemn",
-
-    rulou:
-      "Ex.: Aluminiu termoizolant",
+    perdea: "Ex.: Voal, in, organza",
+    draperie: "Ex.: Catifea, blackout, dimout",
+    plasa: "Ex.: Fibră de sticlă gri",
+    galerie: "Ex.: Aluminiu, oțel, lemn",
+    rulou: "Ex.: Aluminiu termoizolant",
   };
 
   return (
@@ -151,11 +95,7 @@ function getMaterialPlaceholder(productType) {
 }
 
 function getCollectionPlaceholder(productType) {
-  if (
-    PRODUCT_GROUPS.textile.includes(
-      productType
-    )
-  ) {
+  if (PRODUCT_GROUPS.textile.includes(productType)) {
     return "Ex.: Lunaria";
   }
 
@@ -166,11 +106,26 @@ function getCollectionPlaceholder(productType) {
   return "Ex.: Carina";
 }
 
+function getCatalogItemId(item) {
+  return String(item?.id || item?._id || item?.value || "");
+}
+
+function getCatalogItemName(item) {
+  return (
+    item?.name ||
+    item?.product_name ||
+    item?.product ||
+    item?.label ||
+    "Produs fără denumire"
+  );
+}
+
 export default function ProductCard({
   product,
   productIndex,
   productTypes,
   unitOptions,
+  productCatalog = [],
   updateProduct,
   removeProduct,
   formatMoney,
@@ -178,60 +133,59 @@ export default function ProductCard({
   const selectedType = useMemo(
     () =>
       productTypes.find(
-        (item) =>
-          item.value ===
-          product.product_type
+        (item) => item.value === product.product_type
       ),
-    [
-      product.product_type,
-      productTypes,
-    ]
-  );
-
-  const allowedUnitOptions = useMemo(
-    () => {
-      const allowedUnits =
-        selectedType?.allowedUnits?.length
-          ? selectedType.allowedUnits
-          : unitOptions.map(
-              (item) => item.value
-            );
-
-      return unitOptions.filter(
-        (item) =>
-          allowedUnits.includes(
-            item.value
-          )
-      );
-    },
-    [
-      selectedType,
-      unitOptions,
-    ]
+    [product.product_type, productTypes]
   );
 
   const selectedUnit = useMemo(
     () =>
       unitOptions.find(
         (item) =>
-          item.value ===
-          (product.unit || "buc")
+          item.value === (product.unit || "buc")
       ),
-    [
-      product.unit,
-      unitOptions,
-    ]
+    [product.unit, unitOptions]
+  );
+
+  const catalogProductsForType = useMemo(() => {
+    if (!product.product_type) {
+      return [];
+    }
+
+    return productCatalog.filter((item) => {
+      const itemType =
+        item?.product_type ||
+        item?.category ||
+        item?.type ||
+        "";
+
+      return itemType === product.product_type;
+    });
+  }, [product.product_type, productCatalog]);
+
+  const productOptions = useMemo(
+    () => [
+      {
+        value: "",
+        label: "— Alege produsul —",
+      },
+      ...catalogProductsForType.map((item) => ({
+        value: getCatalogItemId(item),
+        label: getCatalogItemName(item),
+      })),
+      {
+        value: NEW_PRODUCT_VALUE,
+        label: "+ Adaugă produs nou",
+      },
+    ],
+    [catalogProductsForType]
   );
 
   const isShadingProduct =
-    PRODUCT_GROUPS.shading.includes(
-      product.product_type
-    );
+    PRODUCT_GROUPS.shading.includes(product.product_type);
 
   const isTextileProduct =
-    PRODUCT_GROUPS.textile.includes(
-      product.product_type
-    );
+    PRODUCT_GROUPS.textile.includes(product.product_type);
 
   const isInsectScreen =
     PRODUCT_GROUPS.insectScreens.includes(
@@ -239,24 +193,162 @@ export default function ProductCard({
     );
 
   const isHardwareProduct =
-    PRODUCT_GROUPS.hardware.includes(
-      product.product_type
-    );
+    PRODUCT_GROUPS.hardware.includes(product.product_type);
 
-  const hasSelectedProductType =
-    Boolean(product.product_type);
+  const hasSelectedProductType = Boolean(
+    product.product_type
+  );
+
+  const isNewProduct =
+    product.product_type === "other" ||
+    product.is_custom_product === true ||
+    product.catalog_product_id === NEW_PRODUCT_VALUE;
 
   const showMaterialFields =
     hasSelectedProductType &&
     product.product_type !== "other";
 
   const showMechanismFields =
-    isShadingProduct ||
-    isInsectScreen;
+    isShadingProduct || isInsectScreen;
 
-  const showControlSide =
-    isShadingProduct &&
-    product.product_type !== "rulou";
+  const selectCatalogProduct = (catalogProductId) => {
+    if (catalogProductId === NEW_PRODUCT_VALUE) {
+      updateProduct(
+        product.id,
+        "catalog_product_id",
+        NEW_PRODUCT_VALUE
+      );
+      updateProduct(
+        product.id,
+        "is_custom_product",
+        true
+      );
+      updateProduct(product.id, "product", "");
+      updateProduct(
+        product.id,
+        "custom_product_name",
+        ""
+      );
+      return;
+    }
+
+    if (!catalogProductId) {
+      updateProduct(
+        product.id,
+        "catalog_product_id",
+        ""
+      );
+      updateProduct(
+        product.id,
+        "is_custom_product",
+        false
+      );
+      return;
+    }
+
+    const catalogItem = catalogProductsForType.find(
+      (item) =>
+        getCatalogItemId(item) === catalogProductId
+    );
+
+    if (!catalogItem) {
+      return;
+    }
+
+    updateProduct(
+      product.id,
+      "catalog_product_id",
+      catalogProductId
+    );
+    updateProduct(
+      product.id,
+      "is_custom_product",
+      false
+    );
+    updateProduct(
+      product.id,
+      "custom_product_name",
+      ""
+    );
+    updateProduct(
+      product.id,
+      "product",
+      getCatalogItemName(catalogItem)
+    );
+
+    if (catalogItem.collection !== undefined) {
+      updateProduct(
+        product.id,
+        "collection",
+        catalogItem.collection || ""
+      );
+    }
+
+    if (catalogItem.material !== undefined) {
+      updateProduct(
+        product.id,
+        "material",
+        catalogItem.material || ""
+      );
+    }
+
+    if (catalogItem.fabric_color !== undefined) {
+      updateProduct(
+        product.id,
+        "fabric_color",
+        catalogItem.fabric_color || ""
+      );
+    }
+
+    if (catalogItem.mechanism_color !== undefined) {
+      updateProduct(
+        product.id,
+        "mechanism_color",
+        catalogItem.mechanism_color || ""
+      );
+    }
+
+    if (catalogItem.unit) {
+      updateProduct(
+        product.id,
+        "unit",
+        catalogItem.unit
+      );
+    }
+
+    if (
+      catalogItem.unit_price !== undefined &&
+      catalogItem.unit_price !== null
+    ) {
+      updateProduct(
+        product.id,
+        "unit_price",
+        catalogItem.unit_price
+      );
+    }
+  };
+
+  const changeProductType = (nextType) => {
+    updateProduct(product.id, "product_type", nextType);
+    updateProduct(product.id, "catalog_product_id", "");
+    updateProduct(product.id, "is_custom_product", false);
+    updateProduct(product.id, "custom_product_name", "");
+  };
+
+  const changeCustomProductName = (value) => {
+    updateProduct(
+      product.id,
+      "custom_product_name",
+      value
+    );
+    updateProduct(product.id, "product", value);
+  };
+
+  const cardTitle =
+    product.product ||
+    product.custom_product_name ||
+    selectedType?.label ||
+    "Produs necompletat";
 
   return (
     <article
@@ -271,8 +363,7 @@ export default function ProductCard({
           </div>
 
           <div className="mt-1 truncate text-lg font-extrabold text-aj-navy">
-            {selectedType?.label ||
-              "Produs necompletat"}
+            {cardTitle}
           </div>
 
           {product.room && (
@@ -284,62 +375,80 @@ export default function ProductCard({
 
         <button
           type="button"
-          onClick={() =>
-            removeProduct(product.id)
-          }
+          onClick={() => removeProduct(product.id)}
           className="inline-flex items-center justify-center gap-1.5 self-start rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 sm:self-auto"
           aria-label={`Șterge poziția ${
             productIndex + 1
           }`}
         >
           <Trash2 size={15} />
-
           Șterge
         </button>
       </header>
 
       <div className="space-y-6 p-4">
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <SectionTitle description="Alege categoria și identifică poziția din comandă.">
+          <SectionTitle description="Alege categoria, apoi selectează un produs existent sau adaugă unul nou.">
             Informații de bază
           </SectionTitle>
 
           <div>
             <InputLabel>
-              Tip produs
+              Categoria produsului
             </InputLabel>
 
             <Select
-              value={
-                product.product_type
-              }
+              value={product.product_type}
               onChange={(event) =>
-                updateProduct(
-                  product.id,
-                  "product_type",
-                  event.target.value
-                )
+                changeProductType(event.target.value)
               }
               options={productTypes}
             />
           </div>
 
-          {product.product_type ===
-            "other" && (
+          {hasSelectedProductType &&
+            product.product_type !== "other" && (
+              <div>
+                <InputLabel>Produs</InputLabel>
+
+                <Select
+                  value={
+                    isNewProduct
+                      ? NEW_PRODUCT_VALUE
+                      : product.catalog_product_id || ""
+                  }
+                  onChange={(event) =>
+                    selectCatalogProduct(event.target.value)
+                  }
+                  options={productOptions}
+                />
+
+                {catalogProductsForType.length === 0 && (
+                  <div className="mt-1.5 text-[11px] text-slate-400">
+                    Catalogul acestei categorii este gol. Folosește „Adaugă produs nou”.
+                  </div>
+                )}
+              </div>
+            )}
+
+          {(isNewProduct ||
+            product.product_type === "other") && (
             <div>
               <InputLabel>
-                Denumire produs
+                Denumire produs nou
               </InputLabel>
 
               <TextInput
-                placeholder="Ex.: Panou decorativ personalizat"
+                placeholder={getProductPlaceholder(
+                  product.product_type
+                )}
                 value={
-                  product.custom_product_name
+                  product.custom_product_name ||
+                  product.product ||
+                  ""
                 }
                 onChange={(event) =>
-                  updateProduct(
-                    product.id,
-                    "custom_product_name",
+                  changeCustomProductName(
                     event.target.value
                   )
                 }
@@ -354,31 +463,11 @@ export default function ProductCard({
 
             <TextInput
               placeholder="Ex.: Living, Dormitor, Bucătărie"
-              value={product.room}
+              value={product.room || ""}
               onChange={(event) =>
                 updateProduct(
                   product.id,
                   "room",
-                  event.target.value
-                )
-              }
-            />
-          </div>
-
-          <div>
-            <InputLabel>
-              Model / denumire
-            </InputLabel>
-
-            <TextInput
-              placeholder={getProductPlaceholder(
-                product.product_type
-              )}
-              value={product.product}
-              onChange={(event) =>
-                updateProduct(
-                  product.id,
-                  "product",
                   event.target.value
                 )
               }
@@ -392,9 +481,7 @@ export default function ProductCard({
               </InputLabel>
 
               <Select
-                value={
-                  product.unit || "buc"
-                }
+                value={product.unit || "buc"}
                 onChange={(event) =>
                   updateProduct(
                     product.id,
@@ -402,10 +489,34 @@ export default function ProductCard({
                     event.target.value
                   )
                 }
-                options={
-                  allowedUnitOptions
-                }
+                options={unitOptions}
               />
+            </div>
+          )}
+
+          {isNewProduct && (
+            <div className="flex items-end">
+              <label className="flex min-h-11 w-full cursor-pointer items-center gap-3 rounded-lg border border-aj-line bg-aj-cream/30 px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={Boolean(
+                    product.save_to_catalog
+                  )}
+                  onChange={(event) =>
+                    updateProduct(
+                      product.id,
+                      "save_to_catalog",
+                      event.target.checked
+                    )
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-aj-navy focus:ring-aj-gold/40"
+                />
+
+                <span className="flex items-center gap-2 font-semibold">
+                  <Plus size={15} />
+                  Salvează în catalog
+                </span>
+              </label>
             </div>
           )}
         </section>
@@ -414,9 +525,7 @@ export default function ProductCard({
           <section className="border-t border-aj-line pt-5">
             <ProductDimensions
               product={product}
-              updateProduct={
-                updateProduct
-              }
+              updateProduct={updateProduct}
             />
           </section>
         )}
@@ -438,15 +547,13 @@ export default function ProductCard({
             </SectionTitle>
 
             <div>
-              <InputLabel>
-                Material
-              </InputLabel>
+              <InputLabel>Material</InputLabel>
 
               <TextInput
                 placeholder={getMaterialPlaceholder(
                   product.product_type
                 )}
-                value={product.material}
+                value={product.material || ""}
                 onChange={(event) =>
                   updateProduct(
                     product.id,
@@ -468,7 +575,7 @@ export default function ProductCard({
                 placeholder={getCollectionPlaceholder(
                   product.product_type
                 )}
-                value={product.collection}
+                value={product.collection || ""}
                 onChange={(event) =>
                   updateProduct(
                     product.id,
@@ -496,9 +603,7 @@ export default function ProductCard({
                       ? "Ex.: Gri, Negru"
                       : "Ex.: Crem, Cod 102"
                 }
-                value={
-                  product.fabric_color
-                }
+                value={product.fabric_color || ""}
                 onChange={(event) =>
                   updateProduct(
                     product.id,
@@ -524,7 +629,7 @@ export default function ProductCard({
                       : "Ex.: Alb, Negru, Antracit"
                   }
                   value={
-                    product.mechanism_color
+                    product.mechanism_color || ""
                   }
                   onChange={(event) =>
                     updateProduct(
@@ -532,31 +637,6 @@ export default function ProductCard({
                       "mechanism_color",
                       event.target.value
                     )
-                  }
-                />
-              </div>
-            )}
-
-            {showControlSide && (
-              <div>
-                <InputLabel>
-                  Parte acționare
-                </InputLabel>
-
-                <Select
-                  value={
-                    product.control_side ||
-                    "dreapta"
-                  }
-                  onChange={(event) =>
-                    updateProduct(
-                      product.id,
-                      "control_side",
-                      event.target.value
-                    )
-                  }
-                  options={
-                    CONTROL_SIDE_OPTIONS
                   }
                 />
               </div>
@@ -585,9 +665,7 @@ export default function ProductCard({
                   selectedUnit?.priceLabel ||
                   "Ex.: 150"
                 }
-                value={
-                  product.unit_price
-                }
+                value={product.unit_price}
                 onChange={(event) =>
                   updateProduct(
                     product.id,
@@ -604,9 +682,7 @@ export default function ProductCard({
               </InputLabel>
 
               <div className="flex h-11 items-center rounded-lg border border-aj-line bg-aj-cream/50 px-3 text-base font-extrabold text-aj-navy">
-                {formatMoney(
-                  product.total
-                )}
+                {formatMoney(product.total)}
               </div>
             </div>
           </section>
@@ -619,7 +695,7 @@ export default function ProductCard({
 
           <TextArea
             placeholder="Ex.: particularități de execuție, montaj, amplasare, material sau culoare..."
-            value={product.notes}
+            value={product.notes || ""}
             onChange={(event) =>
               updateProduct(
                 product.id,
