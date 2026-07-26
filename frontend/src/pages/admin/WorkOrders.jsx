@@ -2,6 +2,9 @@ import {
   generateClientOrderDocument,
   generateProductionSheetDocument,
 } from "@/lib/workOrderDocuments";
+import {
+  calculateProductPrice,
+} from "@/lib/pricingRules";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
 import { toast } from "sonner";
@@ -204,62 +207,8 @@ const toNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const getProductDimensions = (product) => {
-  if (
-    Array.isArray(product?.dimensions) &&
-    product.dimensions.length > 0
-  ) {
-    return product.dimensions;
-  }
-
-  return [
-    {
-      width: product?.width ?? "",
-      height: product?.height ?? "",
-      length: product?.length ?? "",
-      quantity: product?.quantity ?? 1,
-      notes: "",
-    },
-  ];
-};
-
-const calculateProductTotal = (product) => {
-  const price = toNumber(product?.unit_price);
-  const dimensions = getProductDimensions(product);
-
-  const calculatedQuantity = dimensions.reduce(
-    (sum, dimension) => {
-      const quantity = Math.max(
-        toNumber(dimension.quantity),
-        0
-      );
-
-      switch (product?.unit) {
-        case "mp":
-          return (
-            sum +
-            (toNumber(dimension.width) / 1000) *
-              (toNumber(dimension.height) / 1000) *
-              quantity
-          );
-
-        case "ml":
-          return (
-            sum +
-            toNumber(dimension.length) * quantity
-          );
-
-        case "set":
-        case "buc":
-        default:
-          return sum + quantity;
-      }
-    },
-    0
-  );
-
-  return calculatedQuantity * price;
-};
+const calculateProductTotal = (product) =>
+  calculateProductPrice(product);
 
 const calculateSubtotal = (products = []) =>
   products.reduce(
