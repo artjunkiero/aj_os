@@ -12,6 +12,10 @@ import {
   TextInput,
 } from "./_Modal";
 
+import {
+  calculateMpDimension,
+} from "@/lib/pricingRules";
+
 const DEFAULT_HEADING_TYPES = [
   "Wave",
   "Creion",
@@ -578,7 +582,7 @@ export default function ProductDimensions({
             quantity;
 
           accumulator.totalMl +=
-            length *
+            (length / 1000) *
             quantity;
 
           accumulator.totalMp +=
@@ -770,6 +774,15 @@ export default function ProductDimensions({
                 0
               );
 
+            const mpPricing =
+              !curtainProduct &&
+              unit === "mp"
+                ? calculateMpDimension(
+                    product,
+                    dimension
+                  )
+                : null;
+
             return (
               <div
                 key={
@@ -847,7 +860,7 @@ export default function ProductDimensions({
                       <div>
                         <InputLabel>
                           Lungime șină
-                          (m)
+                          (mm)
                         </InputLabel>
 
                         <TextInput
@@ -855,7 +868,7 @@ export default function ProductDimensions({
                           min="0"
                           step="0.01"
                           inputMode="decimal"
-                          placeholder="Ex.: 3.20"
+                          placeholder="Ex.: 3200"
                           value={
                             dimension
                               .track_length
@@ -1023,7 +1036,7 @@ export default function ProductDimensions({
                         <div>
                           <InputLabel>
                             Consum material
-                            (ml)
+                            (mm)
                           </InputLabel>
 
                           <TextInput
@@ -1031,7 +1044,7 @@ export default function ProductDimensions({
                             min="0"
                             step="0.01"
                             inputMode="decimal"
-                            placeholder="Ex.: 8.00"
+                            placeholder="Ex.: 8000"
                             value={
                               dimension
                                 .material_length
@@ -1066,14 +1079,15 @@ export default function ProductDimensions({
 
                           <div className="mt-1 text-lg font-extrabold text-aj-navy">
                             {formatNumber(
-                              calculatedPositionTotal,
+                              calculatedPositionTotal /
+                                1000,
                               2
                             )}{" "}
                             ml
                           </div>
 
                           <div className="mt-1 text-[11px] leading-4 text-slate-400">
-                            șină ×
+                            șină (mm) ×
                             coeficient ×
                             cantitate
                           </div>
@@ -1297,7 +1311,7 @@ export default function ProductDimensions({
                       <div>
                         <InputLabel>
                           Lungime
-                          (m)
+                          (mm)
                         </InputLabel>
 
                         <TextInput
@@ -1305,7 +1319,7 @@ export default function ProductDimensions({
                           min="0"
                           step="0.01"
                           inputMode="decimal"
-                          placeholder="Ex.: 6.50"
+                          placeholder="Ex.: 6500"
                           value={
                             dimension.length
                           }
@@ -1390,6 +1404,51 @@ export default function ProductDimensions({
                     </div>
                   </div>
                 )}
+
+                {mpPricing && (
+                  <div className="mt-3 rounded-lg border border-aj-line bg-white px-3 py-2">
+                    <div className="flex flex-col gap-1 text-xs sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-slate-500">
+                        Suprafață reală:{" "}
+                        <strong className="text-aj-navy">
+                          {formatNumber(
+                            mpPricing.realAreaTotalMp,
+                            3
+                          )}{" "}
+                          mp
+                        </strong>
+                      </span>
+
+                      <span className="text-slate-500">
+                        Suprafață facturabilă:{" "}
+                        <strong className="text-aj-navy">
+                          {formatNumber(
+                            mpPricing.billableAreaTotalMp,
+                            3
+                          )}{" "}
+                          mp
+                        </strong>
+                      </span>
+                    </div>
+
+                    {(mpPricing.minimumAreaApplied ||
+                      mpPricing.minimumHeightApplied) && (
+                      <div className="mt-2 space-y-1 text-[11px] font-semibold text-amber-700">
+                        {mpPricing.minimumHeightApplied && (
+                          <div>
+                            S-a aplicat înălțimea minimă de calcul de 1500 mm.
+                          </div>
+                        )}
+
+                        {mpPricing.minimumAreaApplied && (
+                          <div>
+                            S-a aplicat suprafața minimă de calcul de 0,70 mp/bucată.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           }
@@ -1421,7 +1480,8 @@ export default function ProductDimensions({
                 <span className="font-bold text-aj-navy">
                   {formatNumber(
                     totals
-                      .calculatedCurtainMl,
+                      .calculatedCurtainMl /
+                      1000,
                     2
                   )}{" "}
                   ml
