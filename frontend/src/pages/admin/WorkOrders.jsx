@@ -4,6 +4,7 @@ import {
 } from "@/lib/workOrderDocuments";
 import {
   calculateProductPrice,
+  getProductDimensions,
 } from "@/lib/pricingRules";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
@@ -672,48 +673,33 @@ export default function AdminWorkOrders() {
   const submit = async (event) => {
     event.preventDefault();
 
-    if (!form.customer_id) {
-      toast.error(
-        "Selectează clientul"
-      );
+    if (saving) {
+      return;
+    }
 
+    if (!form.customer_id) {
+      toast.error("Selectează clientul");
       return;
     }
 
     if (!form.order_date) {
-      toast.error(
-        "Data comenzii este obligatorie"
-      );
-
+      toast.error("Data comenzii este obligatorie");
       return;
     }
 
-    if (!form.products.length) {
-      toast.error(
-        "Adaugă cel puțin un produs"
-      );
-
+    if (!Array.isArray(form.products) || form.products.length === 0) {
+      toast.error("Adaugă cel puțin un produs");
       return;
     }
 
-    const invalidProduct =
-      form.products.find((product) => {
-        const dimensions =
-          getProductDimensions(product);
+    const invalidProduct = form.products.find((product) => {
+      const dimensions = getProductDimensions(product);
+      const hasValidQuantity = dimensions.some(
+        (dimension) => toNumber(dimension.quantity) > 0
+      );
 
-        const hasValidQuantity =
-          dimensions.some(
-            (dimension) =>
-              toNumber(
-                dimension.quantity
-              ) > 0
-          );
-
-        return (
-          !product.product_type ||
-          !hasValidQuantity
-        );
-      });
+      return !product.product_type || !hasValidQuantity;
+    });
 
     if (invalidProduct) {
       toast.error(
@@ -721,16 +707,14 @@ export default function AdminWorkOrders() {
           invalidProduct.position || 1
         }`
       );
-
       return;
     }
 
-    const unnamedCustomProduct =
-      form.products.find(
-        (product) =>
-          product.product_type === "other" &&
-          !product.custom_product_name?.trim()
-      );
+    const unnamedCustomProduct = form.products.find(
+      (product) =>
+        product.product_type === "other" &&
+        !product.custom_product_name?.trim()
+    );
 
     if (unnamedCustomProduct) {
       toast.error(
@@ -738,123 +722,113 @@ export default function AdminWorkOrders() {
           unnamedCustomProduct.position || 1
         }`
       );
-
       return;
     }
 
-    const payload = {
-      ...form,
+    try {
+      setSaving(true);
 
-      /*
-       * Compatibilitate temporară cu
-       * modelul vechi din backend.
-       */
-      title:
-        form.title ||
-        (form.order_number
-          ? `Comanda ${form.order_number}`
-          : "Comandă ART JUNKIE"),
-
-      subtotal_amount:
-        Number(
-          form.subtotal_amount
-        ) || 0,
-
-      order_discount:
-        Number(
-          form.order_discount
-        ) || 0,
-
-      total_amount:
-        Number(
-          form.total_amount
-        ) || 0,
-
-      advance_paid:
-        Number(
-          form.advance_paid
-        ) || 0,
-
-      products: form.products.map(
-        (product, index) => ({
-          ...product,
-
-          position: index + 1,
-
-          quantity:
-            Number(
-              product.quantity
-            ) || 0,
-
-          width:
-            product.width === ""
-              ? ""
-              : Number(
-                  product.width
-                ) || 0,
-
-          height:
-            product.height === ""
-              ? ""
-              : Number(
-                  product.height
-                ) || 0,
-
-          length:
-            product.length === ""
-              ? ""
-              : Number(
-                  product.length
-                ) || 0,
-
-          dimensions:
-            getProductDimensions(
-              product
-            ).map((dimension) => ({
+      const normalizedProducts = form.products.map(
+        (product, index) => {
+          const dimensions = getProductDimensions(product).map(
+            (dimension) => ({
               ...dimension,
 
               width:
-                dimension.width === ""
+                dimension.width === "" ||
+                dimension.width === null ||
+                dimension.width === undefined
                   ? ""
-                  : Number(
-                      dimension.width
-                    ) || 0,
+                  : Number(dimension.width) || 0,
 
               height:
-                dimension.height === ""
+                dimension.height === "" ||
+                dimension.height === null ||
+                dimension.height === undefined
                   ? ""
-                  : Number(
-                      dimension.height
-                    ) || 0,
+                  : Number(dimension.height) || 0,
+
+              execution_height:
+                dimension.execution_height === "" ||
+                dimension.execution_height === null ||
+                dimension.execution_height === undefined
+                  ? ""
+                  : Number(dimension.execution_height) || 0,
 
               length:
-                dimension.length === ""
+                dimension.length === "" ||
+                dimension.length === null ||
+                dimension.length === undefined
                   ? ""
-                  : Number(
-                      dimension.length
-                    ) || 0,
+                  : Number(dimension.length) || 0,
 
-              quantity:
-                Number(
-                  dimension.quantity
-                ) || 0,
-            })),
+              material_length:
+                dimension.material_length === "" ||
+                dimension.material_length === null ||
+                dimension.material_length === undefined
+                  ? ""
+                  : Number(dimension.material_length) || 0,
 
-          unit_price:
-            Number(
-              product.unit_price
-            ) || 0,
+              quantity: Number(dimension.quantity) || 0,
+            })
+          );
 
-          total:
-            calculateProductTotal(
-              product
-            ),
-        })
-      ),
-    };
+          const firstDimension = dimensions[0] || {};
+          const productQuantity = dimensions.reduce(
+            (sum, dimension) =>
+              sum + (Number(dimension.quantity) || 0),
+            0
+          );
 
-    try {
-      setSaving(true);
+          const normalizedProduct = {
+            ...product,
+            position: index + 1,
+            dimensions,
+            quantity: productQuantity,
+
+            // Compatibilitate cu structura veche din backend.
+            width: firstDimension.width ?? "",
+            height: firstDimension.height ?? "",
+            length:
+              firstDimension.length ??
+              firstDimension.material_length ??
+              "",
+
+            unit_price: Number(product.unit_price) || 0,
+          };
+
+          return {
+            ...normalizedProduct,
+            total: calculateProductTotal(normalizedProduct),
+          };
+        }
+      );
+
+      const subtotalAmount =
+        calculateSubtotal(normalizedProducts);
+
+      const totalAmount =
+        calculateOrderTotal(
+          normalizedProducts,
+          form.order_discount
+        );
+
+      const payload = {
+        ...form,
+
+        title:
+          form.title ||
+          (form.order_number
+            ? `Comanda ${form.order_number}`
+            : "Comandă ART JUNKIE"),
+
+        products: normalizedProducts,
+
+        subtotal_amount: Number(subtotalAmount) || 0,
+        order_discount: Number(form.order_discount) || 0,
+        total_amount: Number(totalAmount) || 0,
+        advance_paid: Number(form.advance_paid) || 0,
+      };
 
       if (editing?.id) {
         await api.patch(
@@ -862,18 +836,10 @@ export default function AdminWorkOrders() {
           payload
         );
 
-        toast.success(
-          "Comanda a fost actualizată"
-        );
+        toast.success("Comanda a fost actualizată");
       } else {
-        await api.post(
-          "/work-orders",
-          payload
-        );
-
-        toast.success(
-          "Comanda a fost creată"
-        );
+        await api.post("/work-orders", payload);
+        toast.success("Comanda a fost creată");
       }
 
       setOpen(false);
@@ -883,9 +849,7 @@ export default function AdminWorkOrders() {
       await load();
 
       window.dispatchEvent(
-        new Event(
-          "dashboard:refresh"
-        )
+        new Event("dashboard:refresh")
       );
     } catch (error) {
       console.error(
@@ -893,9 +857,14 @@ export default function AdminWorkOrders() {
         error
       );
 
+      const detail =
+        error?.response?.data?.detail;
+
       toast.error(
-        error?.response?.data?.detail ||
-          "Nu am putut salva comanda"
+        typeof detail === "string"
+          ? detail
+          : error?.message ||
+              "Nu am putut salva comanda"
       );
     } finally {
       setSaving(false);
