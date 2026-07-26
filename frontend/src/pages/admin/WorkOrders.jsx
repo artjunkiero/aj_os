@@ -1,25 +1,44 @@
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Pencil,
+  Plus,
+  RotateCcw,
+  Search,
+  XCircle,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import api from "@/lib/api";
 import {
   generateClientOrderDocument,
   generateProductionSheetDocument,
 } from "@/lib/workOrderDocuments";
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import api from "@/lib/api";
-import { toast } from "sonner";
-import { WORK_ORDER_STATUS, formatDate } from "@/lib/status";
+import {
+  WORK_ORDER_STATUS,
+  formatDate,
+} from "@/lib/status";
+
+import useWorkOrderCalculations from "@/hooks/useWorkOrderCalculations";
+import {
+  calculateProductValue,
+  createEmptyDimension,
+  round,
+  toNumber,
+} from "@/utils/workOrderCalculations";
+
 import Modal, {
   Field,
-  TextInput,
-  TextArea,
   Select,
+  TextArea,
+  TextInput,
 } from "./_Modal";
+import FinancialSummary from "./FinancialSummary";
 import ProductCard from "./ProductCard";
-import {
-  Plus,
-  Pencil,
-  XCircle,
-  RotateCcw,
-  Search,
-} from "lucide-react";
 
 const STATUSES = Object.keys(WORK_ORDER_STATUS);
 
@@ -122,8 +141,9 @@ const UNIT_OPTIONS = [
 ];
 
 const getProductTypeConfig = (productType) =>
-  PRODUCT_TYPES.find((item) => item.value === productType) ||
-  PRODUCT_TYPES[0];
+  PRODUCT_TYPES.find(
+    (item) => item.value === productType
+  ) || PRODUCT_TYPES[0];
 
 const createId = () => {
   if (
@@ -143,27 +163,38 @@ const createEmptyProduct = (position = 1) => ({
   position,
 
   product_type: "",
-custom_product_name: "",
-product: "",
-collection: "",
+  custom_product_name: "",
+  product: "",
+  collection: "",
 
-unit: "buc",
-length: "",
+  unit: "buc",
 
-  room: "",
-
+  /*
+   * Câmpurile vechi sunt păstrate pentru
+   * compatibilitatea cu comenzile existente.
+   */
   width: "",
   height: "",
+  length: "",
   quantity: 1,
+
+  /*
+   * Noua structură folosită de ProductDimensions.
+   */
+  dimensions: [
+    {
+      ...createEmptyDimension(),
+      quantity: 1,
+    },
+  ],
+
+  room: "",
 
   material: "",
   fabric_color: "",
   mechanism_color: "",
 
   control_side: "dreapta",
-  cassette: false,
-  guides: false,
-  motorized: false,
 
   unit_price: 0,
   total: 0,
@@ -181,87 +212,102 @@ const createEmptyForm = () => ({
   delivery_date: "",
 
   /*
-   * Păstrat temporar pentru compatibilitate
-   * cu backend-ul actual.
-   * Nu este afișat în formular.
+   * Păstrat pentru compatibilitatea
+   * cu modelul existent din backend.
    */
   title: "",
 
-  subtotal_amount: 0,
-  order_discount: 0,
-  total_amount: 0,
+  discount_mode: "fixed",
+  discount_value: 0,
+
+  vat_enabled: false,
+  vat_rate: 21,
+
   advance_paid: 0,
 
   status: "lead",
-
   notes: "",
 
   products: [createEmptyProduct()],
 });
 
-const calculateProductTotal = (product) => {
-  const quantity = Number(product.quantity || 0);
-  const price = Number(product.unit_price || 0);
+const normalizeDimension = (
+  dimension,
+  index = 0
+) => ({
+  ...createEmptyDimension(),
+  ...dimension,
 
-  switch (product.unit) {
-    case "mp": {
-      const width = Number(product.width || 0) / 1000;
-      const height = Number(product.height || 0) / 1000;
+  id:
+    dimension?.id ||
+    `${createId()}-${index}`,
 
-      return width * height * quantity * price;
-    }
+  width:
+    dimension?.width ??
+    "",
 
-    case "ml": {
-      const length = Number(product.length || 0);
+  height:
+    dimension?.height ??
+    "",
 
-      return length * quantity * price;
-    }
+  length:
+    dimension?.length ??
+    "",
 
-    case "set":
-    case "buc":
-    default:
-      return quantity * price;
-  }
-};
-const calculateSubtotal = (products = []) =>
-  products.reduce(
-    (sum, product) =>
-      sum + calculateProductTotal(product),
-    0
-  );
+  quantity:
+    dimension?.quantity === "" ||
+    dimension?.quantity === undefined ||
+    dimension?.quantity === null
+      ? 1
+      : dimension.quantity,
+});
 
-const calculateOrderTotal = (
-  products = [],
-  discount = 0
-) =>
-  Math.max(
-    calculateSubtotal(products) -
-      Number(discount || 0),
-    0
-  );
+const getLegacyDimension = (product) => ({
+  ...createEmptyDimension(),
 
-const formatMoney = (value) =>
-  `${Number(value || 0).toLocaleString(
-    "ro-RO",
-    {
-      maximumFractionDigits: 2,
-    }
-  )} lei`;
+  width:
+    product?.width ??
+    "",
+
+  height:
+    product?.height ??
+    "",
+
+  length:
+    product?.length ??
+    "",
+
+  quantity:
+    product?.quantity === "" ||
+    product?.quantity === undefined ||
+    product?.quantity === null
+      ? 1
+      : product.quantity,
+});
 
 const normalizeProduct = (
   product,
   index
 ) => {
+  const savedDimensions =
+    Array.isArray(product?.dimensions) &&
+    product.dimensions.length > 0
+      ? product.dimensions.map(
+          normalizeDimension
+        )
+      : [getLegacyDimension(product)];
+
   const normalized = {
     ...createEmptyProduct(index + 1),
     ...product,
 
     id: product?.id || createId(),
     position: index + 1,
+    dimensions: savedDimensions,
   };
 
   normalized.total =
-    calculateProductTotal(normalized);
+    calculateProductValue(normalized);
 
   return normalized;
 };
@@ -288,6 +334,15 @@ const getOrderNumber = (workOrder) => {
     ? `AJ-${year}-${suffix}`
     : "—";
 };
+
+const formatMoney = (value) =>
+  `${toNumber(value).toLocaleString(
+    "ro-RO",
+    {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }
+  )} lei`;
 
 function InputLabel({ children }) {
   return (
@@ -322,6 +377,31 @@ export default function AdminWorkOrders() {
     useState("");
 
   const newProductIdRef = useRef(null);
+
+  const financialSummary =
+    useWorkOrderCalculations({
+      products: form.products,
+
+      discountMode:
+        form.discount_mode,
+
+      discountValue:
+        form.discount_value,
+
+      vatEnabled:
+        form.vat_enabled,
+
+      vatRate:
+        form.vat_rate,
+    });
+
+  const remainingAmount = Math.max(
+    toNumber(
+      financialSummary.grandTotal
+    ) -
+      toNumber(form.advance_paid),
+    0
+  );
 
   const load = async () => {
     try {
@@ -367,31 +447,42 @@ export default function AdminWorkOrders() {
   }, [status]);
 
   useEffect(() => {
-    const productId = newProductIdRef.current;
+    const productId =
+      newProductIdRef.current;
 
     if (!open || !productId) {
       return;
     }
 
-    const frameId = window.requestAnimationFrame(() => {
-      const productElement = document.getElementById(
-        `product-card-${productId}`
+    const frameId =
+      window.requestAnimationFrame(
+        () => {
+          const productElement =
+            document.getElementById(
+              `product-card-${productId}`
+            );
+
+          productElement?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+
+          const firstInput =
+            productElement?.querySelector(
+              "select, input, textarea"
+            );
+
+          firstInput?.focus?.();
+
+          newProductIdRef.current =
+            null;
+        }
       );
 
-      productElement?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-
-      const firstInput = productElement?.querySelector(
-        "select, input, textarea"
+    return () =>
+      window.cancelAnimationFrame(
+        frameId
       );
-
-      firstInput?.focus?.();
-      newProductIdRef.current = null;
-    });
-
-    return () => window.cancelAnimationFrame(frameId);
   }, [form.products.length, open]);
 
   const customerName = (customerId) =>
@@ -441,11 +532,7 @@ export default function AdminWorkOrders() {
     );
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    rows,
-    customers,
-    search,
-  ]);
+  }, [rows, customers, search]);
 
   const closeModal = () => {
     if (saving) {
@@ -476,12 +563,32 @@ export default function AdminWorkOrders() {
           )
         : [createEmptyProduct()];
 
-    const subtotal =
-      calculateSubtotal(products);
+    const savedDiscountMode =
+      workOrder.discount_mode ||
+      "fixed";
 
-    const discount = Number(
-      workOrder.order_discount || 0
-    );
+    const savedDiscountValue =
+      workOrder.discount_value !==
+        undefined &&
+      workOrder.discount_value !== null
+        ? workOrder.discount_value
+        : workOrder.order_discount || 0;
+
+    const savedVatEnabled =
+      workOrder.vat_enabled !==
+        undefined &&
+      workOrder.vat_enabled !== null
+        ? Boolean(
+            workOrder.vat_enabled
+          )
+        : false;
+
+    const savedVatRate =
+      workOrder.vat_rate !==
+        undefined &&
+      workOrder.vat_rate !== null
+        ? workOrder.vat_rate
+        : 21;
 
     setEditing(workOrder);
 
@@ -508,25 +615,22 @@ export default function AdminWorkOrders() {
       title:
         workOrder.title || "",
 
-      subtotal_amount: subtotal,
+      discount_mode:
+        savedDiscountMode,
 
-      order_discount: discount,
+      discount_value:
+        savedDiscountValue,
 
-      total_amount:
-        workOrder.total_amount !==
-          undefined &&
-        workOrder.total_amount !== null
-          ? Number(
-              workOrder.total_amount
-            )
-          : calculateOrderTotal(
-              products,
-              discount
-            ),
+      vat_enabled:
+        savedVatEnabled,
 
-      advance_paid: Number(
-        workOrder.advance_paid || 0
-      ),
+      vat_rate:
+        savedVatRate,
+
+      advance_paid:
+        toNumber(
+          workOrder.advance_paid
+        ),
 
       status:
         workOrder.status || "lead",
@@ -541,19 +645,25 @@ export default function AdminWorkOrders() {
   };
 
   const addProduct = () => {
-    const newProduct = createEmptyProduct(
-      form.products.length + 1
-    );
+    const newProduct =
+      createEmptyProduct(
+        form.products.length + 1
+      );
 
-    newProductIdRef.current = newProduct.id;
+    newProductIdRef.current =
+      newProduct.id;
 
     setForm((previous) => ({
       ...previous,
+
       products: [
         ...previous.products,
+
         {
           ...newProduct,
-          position: previous.products.length + 1,
+          position:
+            previous.products.length +
+            1,
         },
       ],
     }));
@@ -577,7 +687,8 @@ export default function AdminWorkOrders() {
         previous.products
           .filter(
             (product) =>
-              product.id !== productId
+              product.id !==
+              productId
           )
           .map(
             (product, index) => ({
@@ -588,79 +699,76 @@ export default function AdminWorkOrders() {
 
       return {
         ...previous,
-
         products,
-
-        subtotal_amount:
-          calculateSubtotal(products),
-
-        total_amount:
-          calculateOrderTotal(
-            products,
-            previous.order_discount
-          ),
       };
     });
   };
 
   const updateProduct = (
-  productId,
-  field,
-  value
-) => {
-  setForm((previous) => {
-    const products = previous.products.map(
-      (product) => {
-        if (product.id !== productId) {
-          return product;
-        }
+    productId,
+    field,
+    value
+  ) => {
+    setForm((previous) => {
+      const products =
+        previous.products.map(
+          (product) => {
+            if (
+              product.id !== productId
+            ) {
+              return product;
+            }
 
-        let updatedProduct = {
-          ...product,
-          [field]: value,
-        };
+            let updatedProduct = {
+              ...product,
+              [field]: value,
+            };
 
-        if (field === "product_type") {
-          const productConfig =
-            getProductTypeConfig(value);
+            if (
+              field === "product_type"
+            ) {
+              const productConfig =
+                getProductTypeConfig(
+                  value
+                );
 
-          updatedProduct = {
-            ...updatedProduct,
-            unit: productConfig.defaultUnit,
-            custom_product_name:
-              value === "other"
-                ? updatedProduct.custom_product_name
-                : "",
-          };
+              updatedProduct = {
+                ...updatedProduct,
 
-          if (
-            productConfig.defaultUnit !== "mp"
-          ) {
-            updatedProduct.width = "";
-            updatedProduct.height = "";
-          }
+                unit:
+                  productConfig.defaultUnit,
 
-          if (
-            productConfig.defaultUnit !== "ml"
-          ) {
-            updatedProduct.length = "";
-          }
-        }
+                custom_product_name:
+                  value === "other"
+                    ? updatedProduct.custom_product_name
+                    : "",
+              };
+            }
 
-        if (field === "unit") {
-          if (value !== "mp") {
-            updatedProduct.width = "";
-            updatedProduct.height = "";
-          }
+            if (
+              field === "dimensions"
+            ) {
+              const dimensions =
+                Array.isArray(value) &&
+                value.length > 0
+                  ? value.map(
+                      normalizeDimension
+                    )
+                  : [
+                      {
+                        ...createEmptyDimension(),
+                        quantity: 1,
+                      },
+                    ];
 
-          if (value !== "ml") {
-            updatedProduct.length = "";
-          }
-        }
-
+              updatedProduct = {
+                ...updatedProduct,
+                dimensions,
+              };
+            }
 
             updatedProduct.total =
-              calculateProductTotal(
+              calculateProductValue(
                 updatedProduct
               );
 
@@ -670,35 +778,219 @@ export default function AdminWorkOrders() {
 
       return {
         ...previous,
-
         products,
-
-        subtotal_amount:
-          calculateSubtotal(products),
-
-        total_amount:
-          calculateOrderTotal(
-            products,
-            previous.order_discount
-          ),
       };
     });
   };
 
-  const updateOrderDiscount = (
-    value
+  const validateProducts = () => {
+    const invalidProduct =
+      form.products.find(
+        (product) =>
+          !product.product_type
+      );
+
+    if (invalidProduct) {
+      toast.error(
+        `Alege tipul produsului pentru poziția ${
+          invalidProduct.position || 1
+        }`
+      );
+
+      return false;
+    }
+
+    for (
+      let productIndex = 0;
+      productIndex <
+      form.products.length;
+      productIndex += 1
+    ) {
+      const product =
+        form.products[
+          productIndex
+        ];
+
+      if (
+        !Array.isArray(
+          product.dimensions
+        ) ||
+        product.dimensions.length === 0
+      ) {
+        toast.error(
+          `Adaugă cel puțin o dimensiune pentru poziția ${
+            product.position ||
+            productIndex + 1
+          }`
+        );
+
+        return false;
+      }
+
+      for (
+        let dimensionIndex = 0;
+        dimensionIndex <
+        product.dimensions.length;
+        dimensionIndex += 1
+      ) {
+        const dimension =
+          product.dimensions[
+            dimensionIndex
+          ];
+
+        if (
+          toNumber(
+            dimension.quantity
+          ) <= 0
+        ) {
+          toast.error(
+            `Cantitatea trebuie să fie mai mare decât zero la poziția ${
+              product.position ||
+              productIndex + 1
+            }, dimensiunea ${
+              dimensionIndex + 1
+            }`
+          );
+
+          return false;
+        }
+
+        if (
+          product.unit === "mp" &&
+          (toNumber(
+            dimension.width
+          ) <= 0 ||
+            toNumber(
+              dimension.height
+            ) <= 0)
+        ) {
+          toast.error(
+            `Completează lățimea și înălțimea la poziția ${
+              product.position ||
+              productIndex + 1
+            }, dimensiunea ${
+              dimensionIndex + 1
+            }`
+          );
+
+          return false;
+        }
+
+        if (
+          product.unit === "ml" &&
+          toNumber(
+            dimension.length
+          ) <= 0
+        ) {
+          toast.error(
+            `Completează lungimea la poziția ${
+              product.position ||
+              productIndex + 1
+            }, dimensiunea ${
+              dimensionIndex + 1
+            }`
+          );
+
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  const prepareProductPayload = (
+    product,
+    index
   ) => {
-    setForm((previous) => ({
-      ...previous,
+    const dimensions =
+      Array.isArray(
+        product.dimensions
+      ) &&
+      product.dimensions.length > 0
+        ? product.dimensions.map(
+            (dimension) => ({
+              ...dimension,
 
-      order_discount: value,
+              width:
+                dimension.width === ""
+                  ? ""
+                  : toNumber(
+                      dimension.width
+                    ),
 
-      total_amount:
-        calculateOrderTotal(
-          previous.products,
-          value
+              height:
+                dimension.height === ""
+                  ? ""
+                  : toNumber(
+                      dimension.height
+                    ),
+
+              length:
+                dimension.length === ""
+                  ? ""
+                  : toNumber(
+                      dimension.length
+                    ),
+
+              quantity:
+                toNumber(
+                  dimension.quantity
+                ),
+            })
+          )
+        : [
+            getLegacyDimension(
+              product
+            ),
+          ];
+
+    const firstDimension =
+      dimensions[0] || {};
+
+    const totalQuantity =
+      dimensions.reduce(
+        (sum, dimension) =>
+          sum +
+          toNumber(
+            dimension.quantity
+          ),
+        0
+      );
+
+    return {
+      ...product,
+
+      position: index + 1,
+
+      dimensions,
+
+      /*
+       * Compatibilitate cu documentele
+       * și modelele vechi.
+       */
+      width:
+        firstDimension.width ?? "",
+
+      height:
+        firstDimension.height ?? "",
+
+      length:
+        firstDimension.length ?? "",
+
+      quantity: totalQuantity,
+
+      unit_price:
+        toNumber(
+          product.unit_price
         ),
-    }));
+
+      total: round(
+        calculateProductValue(
+          product
+        )
+      ),
+    };
   };
 
   const submit = async (event) => {
@@ -728,94 +1020,88 @@ export default function AdminWorkOrders() {
       return;
     }
 
-    const invalidProduct =
-      form.products.find(
-        (product) =>
-          !product.product_type ||
-          Number(
-            product.quantity || 0
-          ) <= 0
-      );
-
-    if (invalidProduct) {
-      toast.error(
-        `Completează tipul produsului și cantitatea pentru poziția ${
-          invalidProduct.position || 1
-        }`
-      );
-
+    if (!validateProducts()) {
       return;
     }
 
-    const payload = {
-      ...form,
+    const preparedProducts =
+      form.products.map(
+        prepareProductPayload
+      );
 
-      /*
-       * Compatibilitate temporară cu
-       * modelul vechi din backend.
-       */
+    const payload = {
+      customer_id:
+        form.customer_id,
+
+      order_number:
+        form.order_number || "",
+
+      order_date:
+        form.order_date,
+
+      delivery_date:
+        form.delivery_date || "",
+
       title:
         form.title ||
         (form.order_number
           ? `Comanda ${form.order_number}`
           : "Comandă ART JUNKIE"),
 
-      subtotal_amount:
-        Number(
-          form.subtotal_amount
-        ) || 0,
+      status:
+        form.status,
 
+      notes:
+        form.notes || "",
+
+      products:
+        preparedProducts,
+
+      discount_mode:
+        form.discount_mode,
+
+      discount_value:
+        toNumber(
+          form.discount_value
+        ),
+
+      /*
+       * order_discount rămâne suma
+       * efectivă a reducerii pentru
+       * compatibilitatea cu backend-ul.
+       */
       order_discount:
-        Number(
-          form.order_discount
-        ) || 0,
+        toNumber(
+          financialSummary.discountAmount
+        ),
+
+      vat_enabled:
+        Boolean(
+          form.vat_enabled
+        ),
+
+      vat_rate:
+        toNumber(form.vat_rate),
+
+      vat_amount:
+        toNumber(
+          financialSummary.vatAmount
+        ),
+
+      subtotal_amount:
+        toNumber(
+          financialSummary.subtotal
+        ),
 
       total_amount:
-        Number(
-          form.total_amount
-        ) || 0,
+        toNumber(
+          financialSummary.grandTotal
+        ),
 
       advance_paid:
-        Number(
+        toNumber(
           form.advance_paid
-        ) || 0,
-
-      products: form.products.map(
-        (product, index) => ({
-          ...product,
-
-          position: index + 1,
-
-          quantity:
-            Number(
-              product.quantity
-            ) || 0,
-
-          width:
-            product.width === ""
-              ? ""
-              : Number(
-                  product.width
-                ) || 0,
-
-          height:
-            product.height === ""
-              ? ""
-              : Number(
-                  product.height
-                ) || 0,
-
-          unit_price:
-            Number(
-              product.unit_price
-            ) || 0,
-
-          total:
-            calculateProductTotal(
-              product
-            ),
-        })
-      ),
+        ),
     };
 
     try {
@@ -852,6 +1138,12 @@ export default function AdminWorkOrders() {
           "dashboard:refresh"
         )
       );
+
+      window.dispatchEvent(
+        new Event(
+          "calendar:refresh"
+        )
+      );
     } catch (error) {
       console.error(
         "Eroare la salvarea comenzii:",
@@ -884,6 +1176,12 @@ export default function AdminWorkOrders() {
       window.dispatchEvent(
         new Event(
           "dashboard:refresh"
+        )
+      );
+
+      window.dispatchEvent(
+        new Event(
+          "calendar:refresh"
         )
       );
     } catch (error) {
@@ -950,21 +1248,7 @@ export default function AdminWorkOrders() {
       );
     }
   };
-const printClientOrder = (workOrder) => {
-  const customer = customers.find(
-    (c) => c.id === workOrder.customer_id
-  );
 
-  generateClientOrderDocument(workOrder, customer);
-};
-
-const printProductionSheet = (workOrder) => {
-  const customer = customers.find(
-    (c) => c.id === workOrder.customer_id
-  );
-
-  generateProductionSheetDocument(workOrder, customer);
-};
   const reactivateWorkOrder =
     async (workOrder) => {
       const confirmed =
@@ -997,6 +1281,12 @@ const printProductionSheet = (workOrder) => {
             "dashboard:refresh"
           )
         );
+
+        window.dispatchEvent(
+          new Event(
+            "calendar:refresh"
+          )
+        );
       } catch (error) {
         console.error(
           "Eroare la reactivarea comenzii:",
@@ -1011,16 +1301,37 @@ const printProductionSheet = (workOrder) => {
       }
     };
 
-  const remainingAmount =
-    Math.max(
-      Number(
-        form.total_amount || 0
-      ) -
-        Number(
-          form.advance_paid || 0
-        ),
-      0
+  const printClientOrder = (
+    workOrder
+  ) => {
+    const customer =
+      customers.find(
+        (item) =>
+          item.id ===
+          workOrder.customer_id
+      );
+
+    generateClientOrderDocument(
+      workOrder,
+      customer
     );
+  };
+
+  const printProductionSheet = (
+    workOrder
+  ) => {
+    const customer =
+      customers.find(
+        (item) =>
+          item.id ===
+          workOrder.customer_id
+      );
+
+    generateProductionSheetDocument(
+      workOrder,
+      customer
+    );
+  };
 
   return (
     <div
@@ -1166,15 +1477,14 @@ const printProductionSheet = (workOrder) => {
 
               {filteredRows.map(
                 (workOrder) => {
-                  const total = Number(
-                    workOrder.total_amount ||
-                      0
-                  );
+                  const total =
+                    toNumber(
+                      workOrder.total_amount
+                    );
 
                   const advance =
-                    Number(
-                      workOrder.advance_paid ||
-                        0
+                    toNumber(
+                      workOrder.advance_paid
                     );
 
                   const remaining =
@@ -1195,12 +1505,37 @@ const printProductionSheet = (workOrder) => {
                           (
                             sum,
                             product
-                          ) =>
-                            sum +
-                            Number(
-                              product.quantity ||
-                                0
-                            ),
+                          ) => {
+                            if (
+                              Array.isArray(
+                                product.dimensions
+                              ) &&
+                              product.dimensions
+                                .length > 0
+                            ) {
+                              return (
+                                sum +
+                                product.dimensions.reduce(
+                                  (
+                                    dimensionSum,
+                                    dimension
+                                  ) =>
+                                    dimensionSum +
+                                    toNumber(
+                                      dimension.quantity
+                                    ),
+                                  0
+                                )
+                              );
+                            }
+
+                            return (
+                              sum +
+                              toNumber(
+                                product.quantity
+                              )
+                            );
+                          },
                           0
                         )
                       : 0;
@@ -1325,62 +1660,90 @@ const printProductionSheet = (workOrder) => {
                       </td>
 
                       <td className="px-4 py-3 text-right">
-                       <div className="inline-flex items-center justify-end gap-2">
+                        <div className="inline-flex items-center justify-end gap-2">
+                          <details className="relative">
+                            <summary className="list-none cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:bg-aj-cream transition">
+                              📄 Documente
+                            </summary>
 
-  <details className="relative">
-    <summary className="list-none cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:bg-aj-cream transition">
-      📄 Documente
-    </summary>
+                            <div className="absolute right-0 mt-2 w-60 rounded-lg border border-aj-line bg-white shadow-xl z-50">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  printClientOrder(
+                                    workOrder
+                                  )
+                                }
+                                className="block w-full text-left px-4 py-2 hover:bg-aj-cream"
+                              >
+                                📄 Bon comandă
+                                client
+                              </button>
 
-    <div className="absolute right-0 mt-2 w-60 rounded-lg border border-aj-line bg-white shadow-xl z-50">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  printProductionSheet(
+                                    workOrder
+                                  )
+                                }
+                                className="block w-full text-left px-4 py-2 hover:bg-aj-cream"
+                              >
+                                🏭 Fișă
+                                producție
+                              </button>
+                            </div>
+                          </details>
 
-      <button
-        type="button"
-        onClick={() => printClientOrder(workOrder)}
-        className="block w-full text-left px-4 py-2 hover:bg-aj-cream"
-      >
-        📄 Bon comandă client
-      </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openEditModal(
+                                workOrder
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:bg-aj-cream transition"
+                          >
+                            <Pencil
+                              size={14}
+                            />
 
-      <button
-        type="button"
-        onClick={() => printProductionSheet(workOrder)}
-        className="block w-full text-left px-4 py-2 hover:bg-aj-cream"
-      >
-        🏭 Fișă producție
-      </button>
+                            Modifică
+                          </button>
 
-    </div>
-  </details>
+                          {isCancelled ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                reactivateWorkOrder(
+                                  workOrder
+                                )
+                              }
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+                            >
+                              <RotateCcw
+                                size={14}
+                              />
 
-  <button
-    type="button"
-    onClick={() => openEditModal(workOrder)}
-    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-aj-line text-xs font-semibold text-aj-navy hover:bg-aj-cream transition"
-  >
-    <Pencil size={14} />
-    Modifică
-  </button>
+                              Reactivează
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                cancelWorkOrder(
+                                  workOrder
+                                )
+                              }
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 transition"
+                            >
+                              <XCircle
+                                size={14}
+                              />
 
-  {isCancelled ? (
-    <button
-      type="button"
-      onClick={() => reactivateWorkOrder(workOrder)}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
-    >
-      <RotateCcw size={14} />
-      Reactivează
-    </button>
-  ) : (
-    <button
-      type="button"
-      onClick={() => cancelWorkOrder(workOrder)}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 transition"
-    >
-      <XCircle size={14} />
-      Anulează
-    </button>
-  )}
+                              Anulează
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1407,10 +1770,7 @@ const printProductionSheet = (workOrder) => {
           onSubmit={submit}
           className="grid grid-cols-1 md:grid-cols-2 gap-4"
         >
-          <Field
-            label="Client"
-            wide
-          >
+          <Field label="Client" wide>
             <Select
               value={
                 form.customer_id
@@ -1537,8 +1897,8 @@ const printProductionSheet = (workOrder) => {
 
                 <p className="text-xs text-slate-500 mt-1">
                   Completează separat
-                  fiecare produs sau
-                  poziție din comandă.
+                  fiecare produs și toate
+                  dimensiunile acestuia.
                 </p>
               </div>
 
@@ -1554,85 +1914,107 @@ const printProductionSheet = (workOrder) => {
             </div>
 
             <div className="space-y-4">
-              {form.products.map((product, productIndex) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  productIndex={productIndex}
-                  productTypes={PRODUCT_TYPES}
-                  unitOptions={UNIT_OPTIONS}
-                  updateProduct={updateProduct}
-                  removeProduct={removeProduct}
-                  formatMoney={formatMoney}
-                />
-              ))}
+              {form.products.map(
+                (
+                  product,
+                  productIndex
+                ) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    productIndex={
+                      productIndex
+                    }
+                    productTypes={
+                      PRODUCT_TYPES
+                    }
+                    unitOptions={
+                      UNIT_OPTIONS
+                    }
+                    updateProduct={
+                      updateProduct
+                    }
+                    removeProduct={
+                      removeProduct
+                    }
+                    formatMoney={
+                      formatMoney
+                    }
+                  />
+                )
+              )}
             </div>
           </div>
 
           <div className="col-span-full border-t border-aj-line pt-5 mt-2">
-            <h3 className="font-bold text-lg text-aj-navy mb-1">
-              Situație financiară
-            </h3>
+            <FinancialSummary
+              summary={
+                financialSummary
+              }
+              discountMode={
+                form.discount_mode
+              }
+              discountValue={
+                form.discount_value
+              }
+              vatEnabled={
+                form.vat_enabled
+              }
+              vatRate={
+                form.vat_rate
+              }
+              onDiscountModeChange={(
+                value
+              ) =>
+                setForm(
+                  (previous) => ({
+                    ...previous,
+                    discount_mode:
+                      value,
+                  })
+                )
+              }
+              onDiscountValueChange={(
+                value
+              ) =>
+                setForm(
+                  (previous) => ({
+                    ...previous,
+                    discount_value:
+                      value,
+                  })
+                )
+              }
+              onVatEnabledChange={(
+                value
+              ) =>
+                setForm(
+                  (previous) => ({
+                    ...previous,
+                    vat_enabled:
+                      Boolean(value),
+                  })
+                )
+              }
+              onVatRateChange={(
+                value
+              ) =>
+                setForm(
+                  (previous) => ({
+                    ...previous,
+                    vat_rate: value,
+                  })
+                )
+              }
+              formatMoney={
+                formatMoney
+              }
+            />
 
-            <p className="text-xs text-slate-500 mb-4">
-              Discountul se aplică
-              întregii comenzi, nu
-              fiecărui produs separat.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
               <div>
                 <InputLabel>
-                  Subtotal produse
-                </InputLabel>
-
-                <TextInput
-                  disabled
-                  value={formatMoney(
-                    form.subtotal_amount
-                  )}
-                />
-              </div>
-
-              <div>
-                <InputLabel>
-                  Discount comandă
-                  (lei)
-                </InputLabel>
-
-                <TextInput
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Reducerea totală"
-                  value={
-                    form.order_discount
-                  }
-                  onChange={(event) =>
-                    updateOrderDiscount(
-                      event.target.value
-                    )
-                  }
-                />
-              </div>
-
-              <div>
-                <InputLabel>
-                  Total comandă
-                </InputLabel>
-
-                <TextInput
-                  disabled
-                  value={formatMoney(
-                    form.total_amount
-                  )}
-                />
-              </div>
-
-              <div>
-                <InputLabel>
-                  Avans încasat
-                  (lei)
+                  Avans încasat (lei)
                 </InputLabel>
 
                 <TextInput
