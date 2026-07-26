@@ -1,6 +1,7 @@
 import {
   escapeHtml,
-  getDimensions,
+  getDimensionsHtml,
+  getProductDimensionsList,
   getProductDetails,
   getProductName,
 } from "./helpers";
@@ -25,11 +26,16 @@ const getProductionProductsTable = (products = []) => {
           </td>
 
           <td>
-            ${escapeHtml(getDimensions(product))}
+            ${getDimensionsHtml(product)}
           </td>
 
           <td class="number">
-            ${escapeHtml(product.quantity || 0)}
+            ${escapeHtml(
+              getProductDimensionsList(product).reduce(
+                (sum, dimension) => sum + Number(dimension.quantity || 0),
+                0
+              )
+            )}
           </td>
 
           <td>
