@@ -1,17 +1,17 @@
 import {
   escapeHtml,
   formatMoney,
-  getDimensions,
-  getMeasuredQuantity,
+  getDimensionsHtml,
   getProductDetails,
   getProductName,
   getUnit,
 } from "./helpers";
+import { calculateBillableQuantity } from "../pricingRules";
 
 const getClientProductsTable = (products = []) => {
   const rows = products
     .map((product, index) => {
-      const measuredQuantity = getMeasuredQuantity(product);
+      const measuredQuantity = calculateBillableQuantity(product);
 
       const unitPrice = Number(product.unit_price || 0);
 
@@ -50,7 +50,7 @@ ${getProductDetails(product)}
 </td>
 
 <td>
-${escapeHtml(getDimensions(product))}
+${getDimensionsHtml(product)}
 </td>
 
 <td class="number">
