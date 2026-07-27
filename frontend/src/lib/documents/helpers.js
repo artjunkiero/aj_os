@@ -23,20 +23,74 @@ const UNIT_LABELS = {
 };
 
 const toNumber = (value) => {
-  const parsed = Number(value);
+  const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const getDimensionHeight = (dimension = {}) => {
-  const executionHeight = toNumber(
+/*
+ * Ordinea corectă pentru înălțime:
+ *
+ * 1. dimension.height
+ * 2. product.height
+ * 3. dimension.execution_height
+ * 4. product.execution_height
+ *
+ * execution_height este doar rezervă pentru structuri vechi
+ * sau produse speciale. Nu trebuie să înlocuiască o valoare
+ * validă din height.
+ */
+const getDimensionHeight = (
+  product = {},
+  dimension = {}
+) => {
+  const dimensionHeight = toNumber(
+    dimension.height
+  );
+
+  if (dimensionHeight > 0) {
+    return dimensionHeight;
+  }
+
+  const productHeight = toNumber(
+    product.height
+  );
+
+  if (productHeight > 0) {
+    return productHeight;
+  }
+
+  const dimensionExecutionHeight = toNumber(
     dimension.execution_height
   );
 
-  if (executionHeight > 0) {
-    return executionHeight;
+  if (dimensionExecutionHeight > 0) {
+    return dimensionExecutionHeight;
   }
 
-  return toNumber(dimension.height);
+  return toNumber(
+    product.execution_height
+  );
+};
+
+const getDimensionQuantity = (
+  product = {},
+  dimension = {}
+) => {
+  const dimensionQuantity = toNumber(
+    dimension.quantity
+  );
+
+  if (dimensionQuantity > 0) {
+    return dimensionQuantity;
+  }
+
+  const productQuantity = toNumber(
+    product.quantity
+  );
+
+  return productQuantity > 0
+    ? productQuantity
+    : 1;
 };
 
 export const escapeHtml = (value) =>
@@ -58,7 +112,9 @@ export const formatDate = (value) => {
     return "—";
   }
 
-  const date = new Date(`${value}T00:00:00`);
+  const date = new Date(
+    `${value}T00:00:00`
+  );
 
   if (Number.isNaN(date.getTime())) {
     return escapeHtml(value);
@@ -67,7 +123,9 @@ export const formatDate = (value) => {
   return date.toLocaleDateString("ro-RO");
 };
 
-export const getProductName = (product = {}) => {
+export const getProductName = (
+  product = {}
+) => {
   if (product.custom_product_name) {
     return product.custom_product_name;
   }
@@ -87,7 +145,9 @@ export const getProductName = (product = {}) => {
   );
 };
 
-export const getUnit = (product = {}) =>
+export const getUnit = (
+  product = {}
+) =>
   UNIT_LABELS[product.unit] ||
   product.unit ||
   "buc.";
@@ -106,30 +166,25 @@ export const getProductDimensionsList = (
     {
       width: product.width,
       height: product.height,
-      execution_height: product.execution_height,
+      execution_height:
+        product.execution_height,
       length: product.length,
-      material_length: product.material_length,
-      quantity: product.quantity || 1,
+      material_length:
+        product.material_length,
+      quantity:
+        product.quantity || 1,
       notes: product.notes,
     },
   ];
 };
 
 /*
- * Cantitatea reală este calculată exclusiv în pricingRules.js.
- *
- * Astfel, toate zonele aplicației folosesc aceeași logică:
- * - dimensiuni în milimetri;
- * - conversie mm → m și mm² → m²;
- * - calcul pe m², ml, bucăți sau seturi;
- * - aceeași structură de dimensiuni.
- *
- * Atenție:
- * calculateRealQuantity calculează cantitatea reală.
- * Pentru cantitatea facturabilă se folosește
- * calculateBillableQuantity în fișierele de preț/documente.
+ * Cantitatea reală este calculată exclusiv
+ * în pricingRules.js.
  */
-export const getMeasuredQuantity = (product = {}) =>
+export const getMeasuredQuantity = (
+  product = {}
+) =>
   calculateRealQuantity(product);
 
 export const formatDimension = (
@@ -137,24 +192,38 @@ export const formatDimension = (
   dimension = {},
   index = 0
 ) => {
-  const quantity = Math.max(
-    toNumber(dimension.quantity),
-    0
-  );
+  const quantity =
+    getDimensionQuantity(
+      product,
+      dimension
+    );
 
   let measurement = "—";
 
   if (product.unit === "mp") {
-    const width = toNumber(dimension.width);
-    const height = getDimensionHeight(dimension);
+    const width =
+      toNumber(dimension.width) ||
+      toNumber(product.width);
+
+    const height =
+      getDimensionHeight(
+        product,
+        dimension
+      );
 
     measurement = `${
       width || "—"
     } × ${height || "—"} mm`;
   } else if (product.unit === "ml") {
     const length =
-      toNumber(dimension.material_length) ||
-      toNumber(dimension.length);
+      toNumber(
+        dimension.material_length
+      ) ||
+      toNumber(dimension.length) ||
+      toNumber(
+        product.material_length
+      ) ||
+      toNumber(product.length);
 
     measurement = length
       ? `${length} mm`
@@ -162,9 +231,19 @@ export const formatDimension = (
   } else {
     const parts = [];
 
-    const width = toNumber(dimension.width);
-    const height = getDimensionHeight(dimension);
-    const length = toNumber(dimension.length);
+    const width =
+      toNumber(dimension.width) ||
+      toNumber(product.width);
+
+    const height =
+      getDimensionHeight(
+        product,
+        dimension
+      );
+
+    const length =
+      toNumber(dimension.length) ||
+      toNumber(product.length);
 
     if (width > 0) {
       parts.push(`L: ${width} mm`);
@@ -190,14 +269,22 @@ export const formatDimension = (
   return `${index + 1}. ${measurement} × ${quantity} buc.${note}`;
 };
 
-export const getDimensions = (product = {}) =>
+export const getDimensions = (
+  product = {}
+) =>
   getProductDimensionsList(product)
     .map((dimension, index) =>
-      formatDimension(product, dimension, index)
+      formatDimension(
+        product,
+        dimension,
+        index
+      )
     )
     .join("\n");
 
-export const getDimensionsHtml = (product = {}) =>
+export const getDimensionsHtml = (
+  product = {}
+) =>
   getProductDimensionsList(product)
     .map(
       (dimension, index) => `
@@ -214,7 +301,10 @@ export const getDimensionsHtml = (product = {}) =>
     )
     .join("");
 
-export const detailRow = (label, value) => {
+export const detailRow = (
+  label,
+  value
+) => {
   if (
     value === undefined ||
     value === null ||
@@ -225,23 +315,36 @@ export const detailRow = (label, value) => {
   }
 
   const displayedValue =
-    value === true ? "Da" : value;
+    value === true
+      ? "Da"
+      : value;
 
   return `
     <div class="detail">
-      <span>${escapeHtml(label)}:</span>
+      <span>
+        ${escapeHtml(label)}:
+      </span>
       ${escapeHtml(displayedValue)}
     </div>
   `;
 };
 
-export const getProductDetails = (product = {}) =>
+export const getProductDetails = (
+  product = {}
+) =>
   [
-    detailRow("Colecție", product.collection),
-    detailRow("Material", product.material),
+    detailRow(
+      "Colecție",
+      product.collection
+    ),
+    detailRow(
+      "Material",
+      product.material
+    ),
     detailRow(
       "Culoare material",
-      product.fabric_color || product.color
+      product.fabric_color ||
+        product.color
     ),
     detailRow(
       "Culoare mecanism",
@@ -251,8 +354,14 @@ export const getProductDetails = (product = {}) =>
       "Acționare",
       product.control_side
     ),
-    detailRow("Casetă", product.cassette),
-    detailRow("Ghidaje", product.guides),
+    detailRow(
+      "Casetă",
+      product.cassette
+    ),
+    detailRow(
+      "Ghidaje",
+      product.guides
+    ),
     detailRow(
       "Motorizare",
       product.motorized
