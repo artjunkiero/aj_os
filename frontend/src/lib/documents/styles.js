@@ -3,9 +3,9 @@ const getBaseStyles = () => `
     box-sizing:border-box;
 }
 
-@page{
-    size:A4;
-    margin:12mm;
+@page {
+    size: A4 landscape;
+    margin: 10mm;
 }
 
 body{
