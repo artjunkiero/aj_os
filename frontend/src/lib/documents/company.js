@@ -11,7 +11,7 @@ const COMPANY = {
   website: "https://artjunkie.ro",
 
   // Branding
-  logo: "/branding/logo.png", // vom adăuga logo-ul ulterior
+logo: "/logo_artjunkie.png", // vom adăuga logo-ul ulterior
   favicon: "/favicon.ico",
 
   colors: {
