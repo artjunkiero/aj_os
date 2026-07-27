@@ -29,10 +29,11 @@ const getProductionProductsTable = (products = []) => {
             ${getDimensionsHtml(product)}
           </td>
 
-          <td class="number">
+          <td class="center">
             ${escapeHtml(
               getProductDimensionsList(product).reduce(
-                (sum, dimension) => sum + Number(dimension.quantity || 0),
+                (sum, dimension) =>
+                  sum + Number(dimension.quantity || 0),
                 0
               )
             )}
@@ -49,35 +50,35 @@ const getProductionProductsTable = (products = []) => {
     .join("");
 
   return `
-    <section class="section">
+    <section class="section production-products">
       <div class="section-title">
         Produse pentru producție
       </div>
 
-      <table>
+      <table class="production-table">
         <thead>
           <tr>
-            <th style="width: 38px;">
+            <th style="width: 6%;">
               Poz.
             </th>
 
-            <th style="width: 120px;">
+            <th style="width: 14%;">
               Produs
             </th>
 
-            <th style="width: 90px;">
+            <th style="width: 11%;">
               Cameră
             </th>
 
-            <th style="width: 115px;">
+            <th style="width: 17%;">
               Dimensiuni
             </th>
 
-            <th style="width: 60px;">
+            <th style="width: 7%;">
               Buc.
             </th>
 
-            <th>
+            <th style="width: 45%;">
               Specificații tehnice și observații
             </th>
           </tr>
