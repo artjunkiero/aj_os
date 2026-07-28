@@ -18,33 +18,16 @@ const formatQuantity = (value) =>
 const getClientProductsTable = (products = []) => {
   const rows = products
     .map((product, index) => {
-      /*
-       * Motorul centralizat reprezintă singura sursă de adevăr:
-       *
-       * - dimensiuni introduse în mm;
-       * - conversie mm² → m²;
-       * - minimum 0,70 mp / piesă;
-       * - minimum 1500 mm înălțime pentru verticale;
-       * - cantitate facturabilă;
-       * - totalul produsului.
-       */
       const pricing = calculateProductPricing(product);
 
-      const measuredQuantity =
-        pricing.billableQuantity;
-
-      const unitPrice =
-        pricing.unitPrice;
+      const measuredQuantity = pricing.billableQuantity;
+      const unitPrice = pricing.unitPrice;
 
       const discount = Math.max(
         Number(product.discount || 0),
         0
       );
 
-      /*
-       * Nu mai utilizăm product.total deoarece acesta poate proveni
-       * dintr-un calcul vechi sau poate fi rămas nesincronizat.
-       */
       const total = Math.max(
         pricing.totalPrice - discount,
         0
@@ -86,20 +69,25 @@ const getClientProductsTable = (products = []) => {
           </td>
 
           <td class="number">
-            ${formatMoney(unitPrice)} lei
+            ${formatMoney(unitPrice)}
+            <span class="currency">lei</span>
           </td>
 
           <td class="number">
             ${
               discount > 0
-                ? `${formatMoney(discount)} lei`
+                ? `
+                  ${formatMoney(discount)}
+                  <span class="currency">lei</span>
+                `
                 : "—"
             }
           </td>
 
           <td class="number">
             <strong>
-              ${formatMoney(total)} lei
+              ${formatMoney(total)}
+              <span class="currency">lei</span>
             </strong>
           </td>
         </tr>
@@ -113,26 +101,35 @@ const getClientProductsTable = (products = []) => {
         Produse comandate
       </div>
 
-     <table class="client-table">
-  <colgroup>
-    <col class="col-position" />
-    <col class="col-product" />
-    <col class="col-dimensions" />
-    <col class="col-quantity" />
-    <col class="col-unit-price" />
-    <col class="col-discount" />
-    <col class="col-total" />
-  </colgroup>
+      <table class="client-table">
+        <colgroup>
+          <col class="col-position" />
+          <col class="col-product" />
+          <col class="col-dimensions" />
+          <col class="col-quantity" />
+          <col class="col-unit-price" />
+          <col class="col-discount" />
+          <col class="col-total" />
+        </colgroup>
+
         <thead>
-  <tr>
-    <th>Poz.</th>
-    <th>Produs și specificații</th>
-    <th>Dimensiuni</th>
-    <th>Cant.</th>
-    <th>Preț unitar</th>
-    <th>Discount</th>
-    <th>Total</th>
-  </tr>
-</thead>
+          <tr>
+            <th>Poz.</th>
+            <th>Produs și specificații</th>
+            <th>Dimensiuni</th>
+            <th>Cant.</th>
+            <th>Preț unitar</th>
+            <th>Discount</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </section>
+  `;
+};
 
 export default getClientProductsTable;
