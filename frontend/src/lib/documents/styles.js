@@ -10,22 +10,21 @@ const getBaseStyles = () => `
     margin:7mm;
 }
 
-html{
-    margin:0;
-    padding:0;
-    width:100%;
-    min-width:0;
-    background:#FFFFFF;
-    -webkit-text-size-adjust:100%;
-    text-size-adjust:100%;
-}
-
+html,
 body{
     margin:0;
     padding:0;
     width:100%;
     min-width:0;
     background:#FFFFFF;
+}
+
+html{
+    -webkit-text-size-adjust:100%;
+    text-size-adjust:100%;
+}
+
+body{
     color:#1F2D3D;
     font-family:Arial,Helvetica,sans-serif;
     font-size:11pt;
@@ -86,8 +85,8 @@ body{
     margin-top:6px;
     color:#8E6E33;
     font-size:10pt;
-    font-weight:600;
     line-height:1.25;
+    font-weight:600;
     text-transform:uppercase;
     letter-spacing:.65px;
 }
@@ -125,8 +124,8 @@ body{
     font-size:11pt;
     line-height:1.3;
     font-weight:700;
-    overflow-wrap:break-word;
-    word-break:normal;
+    overflow-wrap:anywhere;
+    word-break:break-word;
 }
 
 .document-title strong{
@@ -197,6 +196,8 @@ body{
     letter-spacing:.25px;
 }
 
+/* Tabele generale */
+
 table{
     width:100%;
     max-width:100%;
@@ -227,7 +228,9 @@ tr{
 th,
 td{
     min-width:0;
+    max-width:100%;
     border:1px solid #CBD2DA;
+    overflow:hidden;
     overflow-wrap:break-word;
     word-break:normal;
     hyphens:none;
@@ -262,11 +265,6 @@ tbody tr:nth-child(even) td{
     -webkit-print-color-adjust:exact;
 }
 
-th:first-child,
-td:first-child{
-    text-align:center;
-}
-
 .center{
     text-align:center;
 }
@@ -274,11 +272,13 @@ td:first-child{
 .number{
     text-align:right;
     white-space:normal;
+    overflow-wrap:break-word;
+    word-break:normal;
     font-variant-numeric:tabular-nums;
 }
 
 .number strong{
-    display:inline-block;
+    display:inline;
     font-weight:800;
 }
 
@@ -311,9 +311,12 @@ td:first-child{
 }
 
 .detail{
+    display:block;
     margin-top:3px;
     break-inside:avoid;
     page-break-inside:avoid;
+    overflow-wrap:break-word;
+    word-break:normal;
 }
 
 .detail:first-child{
@@ -325,13 +328,22 @@ td:first-child{
     font-weight:800;
 }
 
+/*
+ * Dimensiunile trebuie să se poată rupe pe mai multe rânduri.
+ * Nu folosi white-space:nowrap aici.
+ */
 .dimension-line{
     display:block;
+    width:100%;
+    max-width:100%;
     margin:0 0 3px;
     color:#1F2D3D;
-    font-size:9.5pt;
+    font-size:9.4pt;
     line-height:1.35;
-    white-space:nowrap;
+    white-space:normal;
+    overflow:hidden;
+    overflow-wrap:break-word;
+    word-break:normal;
     font-variant-numeric:tabular-nums;
 }
 
@@ -339,42 +351,73 @@ td:first-child{
     margin-bottom:0;
 }
 
+/* Fișa de producție */
+
 .production-table{
     width:100%;
     max-width:100%;
-    font-size:10pt;
+    table-layout:fixed;
+    font-size:9.8pt;
 }
 
 .production-table th{
-    padding:7px 5px;
-    font-size:9pt;
-    line-height:1.2;
+    padding:6px 4px;
+    font-size:8.6pt;
+    line-height:1.15;
+    overflow:hidden;
+    overflow-wrap:break-word;
+    word-break:normal;
 }
 
 .production-table td{
-    padding:7px 5px;
-    font-size:9.7pt;
-    line-height:1.35;
+    padding:6px 4px;
+    font-size:9.2pt;
+    line-height:1.32;
+    overflow:hidden;
+    overflow-wrap:break-word;
+    word-break:normal;
 }
 
 .production-table .product-name{
-    font-size:10.5pt;
+    font-size:10pt;
+    line-height:1.25;
+}
+
+.production-table .product-room{
+    font-size:9.2pt;
+    line-height:1.25;
 }
 
 .production-table .details{
+    margin-top:0;
     color:#263648;
-    font-size:9.3pt;
-    line-height:1.4;
+    font-size:8.8pt;
+    line-height:1.35;
+}
+
+.production-table .detail{
+    margin-top:2px;
 }
 
 .production-table .dimension-line{
-    font-size:9.3pt;
+    display:block;
+    width:100%;
+    max-width:100%;
+    font-size:8.8pt;
+    line-height:1.3;
+    white-space:normal;
+    overflow:hidden;
+    overflow-wrap:break-word;
+    word-break:normal;
 }
 
 .production-table tr{
     break-inside:avoid;
     page-break-inside:avoid;
 }
+
+/* Totaluri */
+
 .totals{
     width:340px;
     max-width:100%;
@@ -397,7 +440,12 @@ td:first-child{
     line-height:1.35;
 }
 
+.total-row span{
+    min-width:0;
+}
+
 .total-row span:last-child{
+    flex:0 0 auto;
     white-space:nowrap;
     font-variant-numeric:tabular-nums;
 }
@@ -417,6 +465,8 @@ td:first-child{
     font-weight:800;
 }
 
+/* Observații */
+
 .notes{
     width:100%;
     min-height:70px;
@@ -430,9 +480,11 @@ td:first-child{
     word-break:normal;
 }
 
+/* Semnături */
+
 .signatures{
     display:grid;
-    grid-template-columns:1fr 1fr;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
     gap:70px;
     width:100%;
     margin-top:45px;
@@ -448,6 +500,8 @@ td:first-child{
     line-height:1.3;
     text-align:center;
 }
+
+/* Footer */
 
 .footer{
     margin-top:20px;
@@ -493,30 +547,132 @@ strong{
     font-weight:700;
 }
 
-@media screen{
+/* Previzualizare pe ecran */
 
+@media screen{
     html{
         background:#ECEFF3;
     }
 
     body{
-        width:210mm;
-        min-height:297mm;
-        margin:12px auto;
-        padding:10mm;
+        width:100%;
+        min-height:100vh;
+        margin:0;
+        padding:12px;
         background:#ECEFF3;
     }
 
     .document{
+        width:100%;
+        max-width:210mm;
+        margin:0 auto;
+        padding:8mm;
         background:#FFFFFF;
-        padding:10mm;
         box-shadow:0 4px 24px rgba(0,0,0,.14);
     }
-
 }
 
-@media print{
+/* Telefon și ecrane înguste */
 
+@media screen and (max-width:700px){
+    body{
+        padding:6px;
+    }
+
+    .document{
+        padding:5mm;
+    }
+
+    .header{
+        gap:10px;
+    }
+
+    .logo{
+        width:140px;
+    }
+
+    .brand-name{
+        font-size:19pt;
+    }
+
+    .brand-subtitle{
+        font-size:8.5pt;
+    }
+
+    .company-info{
+        font-size:8.5pt;
+    }
+
+    .document-title{
+        flex-basis:160px;
+    }
+
+    .document-title h1{
+        font-size:14pt;
+    }
+
+    .document-number{
+        font-size:9.5pt;
+    }
+
+    th{
+        padding:5px 3px;
+        font-size:8pt;
+    }
+
+    td{
+        padding:5px 3px;
+        font-size:8.8pt;
+    }
+
+    .product-name{
+        font-size:9.5pt;
+    }
+
+    .product-room{
+        font-size:8.8pt;
+    }
+
+    .details{
+        font-size:8.5pt;
+    }
+
+    .dimension-line{
+        font-size:8.2pt;
+        line-height:1.25;
+    }
+
+    .production-table th{
+        padding:4px 2px;
+        font-size:7.6pt;
+    }
+
+    .production-table td{
+        padding:4px 2px;
+        font-size:8.2pt;
+    }
+
+    .production-table .product-name{
+        font-size:8.8pt;
+    }
+
+    .production-table .details{
+        font-size:7.8pt;
+    }
+
+    .production-table .dimension-line{
+        font-size:7.8pt;
+        line-height:1.25;
+    }
+
+    .signatures{
+        gap:30px;
+    }
+}
+
+/* Printare și salvare PDF */
+
+@media print{
     html,
     body{
         width:100%;
@@ -536,12 +692,15 @@ strong{
         max-width:100%;
         margin:0;
         padding:0;
+        background:#FFFFFF;
         box-shadow:none;
     }
 
-    table{
+    table,
+    .production-table{
         width:100%;
         max-width:100%;
+        table-layout:fixed;
     }
 
     thead{
@@ -553,9 +712,6 @@ strong{
     }
 
     tr,
-    td,
-    th,
-    .section,
     .header,
     .info-grid,
     .totals,
@@ -564,12 +720,22 @@ strong{
         page-break-inside:avoid;
     }
 
+    .section{
+        break-inside:auto;
+        page-break-inside:auto;
+    }
+
+    .dimension-line{
+        white-space:normal;
+        overflow:hidden;
+        overflow-wrap:break-word;
+        word-break:normal;
+    }
+
     .no-print{
         display:none!important;
     }
-
 }
-
 `;
 
 export default getBaseStyles;
