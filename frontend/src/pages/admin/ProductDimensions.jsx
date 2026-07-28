@@ -1247,82 +1247,63 @@ export default function ProductDimensions({
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    {unit ===
-                      "mp" && (
-                      <>
-                        <div>
-                          <InputLabel>
-                            Lățime
-                            (mm)
-                          </InputLabel>
+                  <div
+                    className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${
+                      unit === "ml"
+                        ? "lg:grid-cols-5"
+                        : "lg:grid-cols-4"
+                    }`}
+                  >
+                    <div>
+                      <InputLabel>
+                        Lățime execuție (mm)
+                      </InputLabel>
 
-                          <TextInput
-                            type="number"
-                            min="0"
-                            step="1"
-                            inputMode="decimal"
-                            placeholder="Ex.: 1200"
-                            value={
-                              dimension.width
-                            }
-                            disabled={
-                              disabled
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              updateDimension(
-                                dimension.id,
-                                "width",
-                                event
-                                  .target
-                                  .value
-                              )
-                            }
-                          />
-                        </div>
+                      <TextInput
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputMode="decimal"
+                        placeholder="Ex.: 1200"
+                        value={dimension.width}
+                        disabled={disabled}
+                        onChange={(event) =>
+                          updateDimension(
+                            dimension.id,
+                            "width",
+                            event.target.value
+                          )
+                        }
+                      />
+                    </div>
 
-                        <div>
-                          <InputLabel>
-                            Înălțime
-                            (mm)
-                          </InputLabel>
+                    <div>
+                      <InputLabel>
+                        Înălțime execuție (mm)
+                      </InputLabel>
 
-                          <TextInput
-                            type="number"
-                            min="0"
-                            step="1"
-                            inputMode="decimal"
-                            placeholder="Ex.: 1800"
-                            value={
-                              dimension.height
-                            }
-                            disabled={
-                              disabled
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              updateDimension(
-                                dimension.id,
-                                "height",
-                                event
-                                  .target
-                                  .value
-                              )
-                            }
-                          />
-                        </div>
-                      </>
-                    )}
+                      <TextInput
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputMode="decimal"
+                        placeholder="Ex.: 1800"
+                        value={dimension.height}
+                        disabled={disabled}
+                        onChange={(event) =>
+                          updateDimension(
+                            dimension.id,
+                            "height",
+                            event.target.value
+                          )
+                        }
+                      />
+                    </div>
 
-                    {unit ===
-                      "ml" && (
+                    {unit === "ml" && (
                       <div>
                         <InputLabel>
-                          Lungime
-                          (mm)
+                          Lungime facturabilă (mm)
                         </InputLabel>
 
                         <TextInput
@@ -1331,31 +1312,26 @@ export default function ProductDimensions({
                           step="0.01"
                           inputMode="decimal"
                           placeholder="Ex.: 6500"
-                          value={
-                            dimension.length
-                          }
-                          disabled={
-                            disabled
-                          }
-                          onChange={(
-                            event
-                          ) =>
-                              updateDimension(
-                                dimension.id,
-                                "length",
-                                event
-                                  .target
-                                  .value
-                              )
+                          value={dimension.length}
+                          disabled={disabled}
+                          onChange={(event) =>
+                            updateDimension(
+                              dimension.id,
+                              "length",
+                              event.target.value
+                            )
                           }
                         />
+
+                        <FieldHint>
+                          Această valoare este folosită la calculul în metri liniari.
+                        </FieldHint>
                       </div>
                     )}
 
                     <div>
                       <InputLabel>
-                        {unit ===
-                        "set"
+                        {unit === "set"
                           ? "Număr seturi"
                           : "Cantitate"}
                       </InputLabel>
@@ -1366,21 +1342,13 @@ export default function ProductDimensions({
                         step="1"
                         inputMode="numeric"
                         placeholder="Ex.: 1"
-                        value={
-                          dimension.quantity
-                        }
-                        disabled={
-                          disabled
-                        }
-                        onChange={(
-                          event
-                        ) =>
+                        value={dimension.quantity}
+                        disabled={disabled}
+                        onChange={(event) =>
                           updateDimension(
                             dimension.id,
                             "quantity",
-                            event
-                              .target
-                              .value
+                            event.target.value
                           )
                         }
                       />
@@ -1388,27 +1356,18 @@ export default function ProductDimensions({
 
                     <div>
                       <InputLabel>
-                        Observație
-                        piesă
+                        Observație piesă
                       </InputLabel>
 
                       <TextInput
                         placeholder="Ex.: Geam stânga"
-                        value={
-                          dimension.notes
-                        }
-                        disabled={
-                          disabled
-                        }
-                        onChange={(
-                          event
-                        ) =>
+                        value={dimension.notes}
+                        disabled={disabled}
+                        onChange={(event) =>
                           updateDimension(
                             dimension.id,
                             "notes",
-                            event
-                              .target
-                              .value
+                            event.target.value
                           )
                         }
                       />
