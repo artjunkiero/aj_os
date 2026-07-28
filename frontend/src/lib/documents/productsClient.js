@@ -113,45 +113,26 @@ const getClientProductsTable = (products = []) => {
         Produse comandate
       </div>
 
-      <table>
+     <table class="client-table">
+  <colgroup>
+    <col class="col-position" />
+    <col class="col-product" />
+    <col class="col-dimensions" />
+    <col class="col-quantity" />
+    <col class="col-unit-price" />
+    <col class="col-discount" />
+    <col class="col-total" />
+  </colgroup>
         <thead>
-          <tr>
-            <th style="width:35px;">
-              Poz.
-            </th>
-
-            <th>
-              Produs și specificații
-            </th>
-
-            <th style="width:120px;">
-              Dimensiuni
-            </th>
-
-            <th style="width:80px;">
-              Cant.
-            </th>
-
-            <th style="width:90px;">
-              Preț unitar
-            </th>
-
-            <th style="width:80px;">
-              Discount
-            </th>
-
-            <th style="width:90px;">
-              Total
-            </th>
-          </tr>
-        </thead>
-
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
-    </section>
-  `;
-};
+  <tr>
+    <th>Poz.</th>
+    <th>Produs și specificații</th>
+    <th>Dimensiuni</th>
+    <th>Cant.</th>
+    <th>Preț unitar</th>
+    <th>Discount</th>
+    <th>Total</th>
+  </tr>
+</thead>
 
 export default getClientProductsTable;
