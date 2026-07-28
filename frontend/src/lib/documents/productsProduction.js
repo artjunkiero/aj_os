@@ -8,45 +8,47 @@ import {
 
 const getProductionProductsTable = (products = []) => {
   const rows = products
-    .map(
-      (product, index) => `
+    .map((product, index) => {
+      const dimensions = getProductDimensionsList(product);
+
+      const totalQuantity = dimensions.reduce(
+        (sum, dimension) =>
+          sum + Number(dimension?.quantity || 0),
+        0
+      );
+
+      return `
         <tr>
-          <td class="center">
+          <td class="center production-position">
             ${index + 1}
           </td>
 
-          <td>
+          <td class="production-product">
             <div class="product-name">
               ${escapeHtml(getProductName(product))}
             </div>
           </td>
 
-          <td>
-            ${escapeHtml(product.room || "—")}
+          <td class="production-room">
+            ${escapeHtml(product?.room || "—")}
           </td>
 
-          <td>
+          <td class="production-dimensions">
             ${getDimensionsHtml(product)}
           </td>
 
-          <td class="center">
-            ${escapeHtml(
-              getProductDimensionsList(product).reduce(
-                (sum, dimension) =>
-                  sum + Number(dimension.quantity || 0),
-                0
-              )
-            )}
+          <td class="center production-quantity">
+            ${escapeHtml(totalQuantity)}
           </td>
 
-          <td>
+          <td class="production-details">
             <div class="details">
               ${getProductDetails(product) || "—"}
             </div>
           </td>
         </tr>
-      `
-    )
+      `;
+    })
     .join("");
 
   return `
@@ -56,36 +58,54 @@ const getProductionProductsTable = (products = []) => {
       </div>
 
       <table class="production-table">
+        <colgroup>
+          <col class="production-col-position" />
+          <col class="production-col-product" />
+          <col class="production-col-room" />
+          <col class="production-col-dimensions" />
+          <col class="production-col-quantity" />
+          <col class="production-col-details" />
+        </colgroup>
+
         <thead>
           <tr>
-            <th style="width: 6%;">
+            <th class="center">
               Poz.
             </th>
 
-            <th style="width: 14%;">
+            <th>
               Produs
             </th>
 
-            <th style="width: 11%;">
+            <th>
               Cameră
             </th>
 
-            <th style="width: 17%;">
+            <th>
               Dimensiuni
             </th>
 
-            <th style="width: 7%;">
+            <th class="center">
               Buc.
             </th>
 
-            <th style="width: 45%;">
+            <th>
               Specificații tehnice și observații
             </th>
           </tr>
         </thead>
 
         <tbody>
-          ${rows}
+          ${
+            rows ||
+            `
+              <tr>
+                <td colspan="6" class="center">
+                  Nu există produse pentru producție.
+                </td>
+              </tr>
+            `
+          }
         </tbody>
       </table>
     </section>
