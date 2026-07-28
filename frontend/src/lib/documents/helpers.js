@@ -351,10 +351,6 @@ export const getProductDetails = (
       product.mechanism_color
     ),
     detailRow(
-      "Acționare",
-      product.control_side
-    ),
-    detailRow(
       "Casetă",
       product.cassette
     ),
