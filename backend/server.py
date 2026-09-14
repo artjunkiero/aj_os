@@ -1628,46 +1628,343 @@ async def reset_demo_data(
         "deleted": deleted,
     }
     
-# ============ DASHBOARD STATS ============
-@api.get("/dashboard/stats")
-async def dashboard_stats(user: dict = Depends(get_current_user)):
+# ============ DASHBOARD ============
+
+DASHBOARD_CANCELLED_STATUSES = [
+    "anulat",
+    "anulata",
+    "anulată",
+    "cancelled",
+    "canceled",
+]
+
+
+@api.get("/dashboard/summary")
+async def dashboard_summary(
+    user: dict = Depends(get_current_user),
+):
+    """
+    Endpoint unic pentru Admin Dashboard.
+
+    Returnează:
+    - KPI-urile dashboard-ului
+    - următoarele 6 măsurători active
+    - următoarele 6 montaje active
+    - ultimele 6 lucrări
+    - ultimele 5 notificări
+
+    Evită descărcarea listelor complete în frontend.
+    """
+
     today = datetime.now(timezone.utc).date().isoformat()
 
-    measurements_today = await db.measurements.count_documents({"date": today})
-    installations_today = await db.installations.count_documents({"date": today})
-    unassigned_measurements = await db.measurements.count_documents({
-        "$or": [{"assigned_to": ""}, {"assigned_to": None}]
+    # ---------------------------------------------------------
+    # KPI
+    # ---------------------------------------------------------
+
+    measurements_today = await db.measurements.count_documents({
+        "date": today,
+        "status": {
+            "$nin": DASHBOARD_CANCELLED_STATUSES
+        },
     })
-    unassigned_installations = await db.installations.count_documents({
-        "$or": [{"assigned_to": ""}, {"assigned_to": None}]
+
+    installations_today = await db.installations.count_documents({
+        "date": today,
+        "status": {
+            "$nin": DASHBOARD_CANCELLED_STATUSES
+        },
     })
-    late_installations = await db.installations.count_documents({
-        "date": {"$lt": today},
-        "status": {"$nin": ["finalizat", "anulat"]}
+
+    # Considerăm nealocat dacă nu există nici assigned_to,
+    # nici assigned_user_ids.
+    unassigned_query = {
+        "$and": [
+            {
+                "$or": [
+                    {"assigned_to": ""},
+                    {"assigned_to": None},
+                    {"assigned_to": {"$exists": False}},
+                ]
+            },
+            {
+                "$or": [
+                    {"assigned_user_ids": {"$exists": False}},
+                    {"assigned_user_ids": None},
+                    {"assigned_user_ids": []},
+                ]
+            },
+        ]
+    }
+
+    unassigned_measurements = (
+        await db.measurements.count_documents(
+            unassigned_query
+        )
+    )
+
+    unassigned_installations = (
+        await db.installations.count_documents(
+            unassigned_query
+        )
+    )
+
+    late_installations = (
+        await db.installations.count_documents({
+            "date": {"$lt": today},
+            "status": {
+                "$nin": DASHBOARD_CANCELLED_STATUSES
+                + [
+                    "finalizat",
+                    "finalizata",
+                    "finalizată",
+                    "completed",
+                ]
+            },
+        })
+    )
+
+    new_leads = await db.leads.count_documents({
+        "status": "nou"
     })
-    new_leads = await db.leads.count_documents({"status": "nou"})
-    offers_to_make = await db.leads.count_documents({"status": "programat"})
-    in_production = await db.production.count_documents({"status": {"$in": ["nou", "in_lucru", "in_asteptare_material"]}})
-    ready_to_install = await db.work_orders.count_documents({"status": "gata_de_montaj"})
-    active_warranties = await db.warranties.count_documents({"status": "activa"})
-    open_tickets = await db.service_tickets.count_documents({"status": {"$in": ["noua", "alocata", "in_lucru"]}})
+
+    offers_to_make = await db.leads.count_documents({
+        "status": "programat"
+    })
+
+    in_production = await db.production.count_documents({
+        "status": {
+            "$in": [
+                "nou",
+                "in_lucru",
+                "in_asteptare_material",
+            ]
+        }
+    })
+
+    ready_to_install = await db.work_orders.count_documents({
+        "status": "gata_de_montaj"
+    })
+
+    active_warranties = await db.warranties.count_documents({
+        "status": "activa"
+    })
+
+    open_tickets = await db.service_tickets.count_documents({
+        "status": {
+            "$in": [
+                "noua",
+                "alocata",
+                "in_lucru",
+            ]
+        }
+    })
+
     total_customers = await db.customers.count_documents({})
+
+    # ---------------------------------------------------------
+    # DASHBOARD LISTS
+    # ---------------------------------------------------------
+
+    # Numai programările active de azi înainte.
+    measurements = (
+        await db.measurements
+        .find(
+            {
+                "date": {"$gte": today},
+                "status": {
+                    "$nin": DASHBOARD_CANCELLED_STATUSES
+                },
+            },
+            {"_id": 0},
+        )
+        .sort([
+            ("date", 1),
+            ("time", 1),
+        ])
+        .limit(6)
+        .to_list(length=6)
+    )
+
+    installations = (
+        await db.installations
+        .find(
+            {
+                "date": {"$gte": today},
+                "status": {
+                    "$nin": DASHBOARD_CANCELLED_STATUSES
+                },
+            },
+            {"_id": 0},
+        )
+        .sort([
+            ("date", 1),
+            ("time", 1),
+        ])
+        .limit(6)
+        .to_list(length=6)
+    )
+
+    work_orders = (
+        await db.work_orders
+        .find(
+            {},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(6)
+        .to_list(length=6)
+    )
+
+    notification_query = {
+        "$or": [
+            {"user_id": user["id"]},
+            {"user_id": ""},
+        ]
+    }
+
+    notifications = (
+        await db.notifications
+        .find(
+            notification_query,
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(5)
+        .to_list(length=5)
+    )
+
+    return {
+        "stats": {
+            "measurements_today": measurements_today,
+            "installations_today": installations_today,
+            "unassigned": (
+                unassigned_measurements
+                + unassigned_installations
+            ),
+            "late_works": late_installations,
+            "new_leads": new_leads,
+            "offers_to_make": offers_to_make,
+            "in_production": in_production,
+            "ready_to_install": ready_to_install,
+            "active_warranties": active_warranties,
+            "open_tickets": open_tickets,
+            "total_customers": total_customers,
+        },
+        "measurements": measurements,
+        "installations": installations,
+        "work_orders": work_orders,
+        "notifications": notifications,
+    }
+
+
+# Păstrăm endpoint-ul vechi pentru compatibilitate.
+@api.get("/dashboard/stats")
+async def dashboard_stats(
+    user: dict = Depends(get_current_user),
+):
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    measurements_today = await db.measurements.count_documents({
+        "date": today,
+        "status": {
+            "$nin": DASHBOARD_CANCELLED_STATUSES
+        },
+    })
+
+    installations_today = await db.installations.count_documents({
+        "date": today,
+        "status": {
+            "$nin": DASHBOARD_CANCELLED_STATUSES
+        },
+    })
+
+    unassigned_query = {
+        "$and": [
+            {
+                "$or": [
+                    {"assigned_to": ""},
+                    {"assigned_to": None},
+                    {"assigned_to": {"$exists": False}},
+                ]
+            },
+            {
+                "$or": [
+                    {"assigned_user_ids": {"$exists": False}},
+                    {"assigned_user_ids": None},
+                    {"assigned_user_ids": []},
+                ]
+            },
+        ]
+    }
+
+    unassigned_measurements = (
+        await db.measurements.count_documents(
+            unassigned_query
+        )
+    )
+
+    unassigned_installations = (
+        await db.installations.count_documents(
+            unassigned_query
+        )
+    )
+
+    late_installations = (
+        await db.installations.count_documents({
+            "date": {"$lt": today},
+            "status": {
+                "$nin": DASHBOARD_CANCELLED_STATUSES
+                + [
+                    "finalizat",
+                    "finalizata",
+                    "finalizată",
+                    "completed",
+                ]
+            },
+        })
+    )
 
     return {
         "measurements_today": measurements_today,
         "installations_today": installations_today,
-        "unassigned": unassigned_measurements + unassigned_installations,
+        "unassigned": (
+            unassigned_measurements
+            + unassigned_installations
+        ),
         "late_works": late_installations,
-        "new_leads": new_leads,
-        "offers_to_make": offers_to_make,
-        "in_production": in_production,
-        "ready_to_install": ready_to_install,
-        "active_warranties": active_warranties,
-        "open_tickets": open_tickets,
-        "total_customers": total_customers,
+        "new_leads": await db.leads.count_documents({
+            "status": "nou"
+        }),
+        "offers_to_make": await db.leads.count_documents({
+            "status": "programat"
+        }),
+        "in_production": await db.production.count_documents({
+            "status": {
+                "$in": [
+                    "nou",
+                    "in_lucru",
+                    "in_asteptare_material",
+                ]
+            }
+        }),
+        "ready_to_install": await db.work_orders.count_documents({
+            "status": "gata_de_montaj"
+        }),
+        "active_warranties": await db.warranties.count_documents({
+            "status": "activa"
+        }),
+        "open_tickets": await db.service_tickets.count_documents({
+            "status": {
+                "$in": [
+                    "noua",
+                    "alocata",
+                    "in_lucru",
+                ]
+            }
+        }),
+        "total_customers": await db.customers.count_documents({}),
     }
-
-
 # ============ REPORTS ============
 @api.get("/reports/summary")
 async def reports_summary(user: dict = Depends(get_current_user)):
