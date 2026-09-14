@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
+
 import {
   Badge,
   MEASUREMENT_STATUS,
@@ -8,6 +9,7 @@ import {
   WORK_ORDER_STATUS,
   formatDate,
 } from "@/lib/status";
+
 import {
   Ruler,
   Wrench,
@@ -21,126 +23,187 @@ import {
   Users,
 } from "lucide-react";
 
+
 const KPIS = [
-  { key: "measurements_today", label: "Măsurători azi", icon: Ruler, tint: "text-sky-700 bg-sky-50 border-sky-100" },
-  { key: "installations_today", label: "Montaje azi", icon: Wrench, tint: "text-violet-700 bg-violet-50 border-violet-100" },
-  { key: "late_works", label: "Lucrări întârziate", icon: AlertTriangle, tint: "text-red-700 bg-red-50 border-red-100" },
-  { key: "unassigned", label: "Nealocate", icon: FileText, tint: "text-amber-800 bg-amber-50 border-amber-100" },
-  { key: "new_leads", label: "Lead-uri noi", icon: UserPlus, tint: "text-emerald-700 bg-emerald-50 border-emerald-100" },
-  { key: "offers_to_make", label: "Oferte de făcut", icon: FileText, tint: "text-yellow-800 bg-yellow-50 border-yellow-100" },
-  { key: "in_production", label: "În producție", icon: Factory, tint: "text-fuchsia-700 bg-fuchsia-50 border-fuchsia-100" },
-  { key: "ready_to_install", label: "Gata de montaj", icon: Truck, tint: "text-teal-700 bg-teal-50 border-teal-100" },
-  { key: "active_warranties", label: "Garanții active", icon: ShieldCheck, tint: "text-lime-700 bg-lime-50 border-lime-100" },
-  { key: "open_tickets", label: "Service deschise", icon: LifeBuoy, tint: "text-orange-700 bg-orange-50 border-orange-100" },
-  { key: "total_customers", label: "Clienți totali", icon: Users, tint: "text-slate-700 bg-slate-50 border-slate-100" },
+  {
+    key: "measurements_today",
+    label: "Măsurători azi",
+    icon: Ruler,
+    tint: "text-sky-700 bg-sky-50 border-sky-100",
+  },
+  {
+    key: "installations_today",
+    label: "Montaje azi",
+    icon: Wrench,
+    tint: "text-violet-700 bg-violet-50 border-violet-100",
+  },
+  {
+    key: "late_works",
+    label: "Lucrări întârziate",
+    icon: AlertTriangle,
+    tint: "text-red-700 bg-red-50 border-red-100",
+  },
+  {
+    key: "unassigned",
+    label: "Nealocate",
+    icon: FileText,
+    tint: "text-amber-800 bg-amber-50 border-amber-100",
+  },
+  {
+    key: "new_leads",
+    label: "Lead-uri noi",
+    icon: UserPlus,
+    tint: "text-emerald-700 bg-emerald-50 border-emerald-100",
+  },
+  {
+    key: "offers_to_make",
+    label: "Oferte de făcut",
+    icon: FileText,
+    tint: "text-yellow-800 bg-yellow-50 border-yellow-100",
+  },
+  {
+    key: "in_production",
+    label: "În producție",
+    icon: Factory,
+    tint: "text-fuchsia-700 bg-fuchsia-50 border-fuchsia-100",
+  },
+  {
+    key: "ready_to_install",
+    label: "Gata de montaj",
+    icon: Truck,
+    tint: "text-teal-700 bg-teal-50 border-teal-100",
+  },
+  {
+    key: "active_warranties",
+    label: "Garanții active",
+    icon: ShieldCheck,
+    tint: "text-lime-700 bg-lime-50 border-lime-100",
+  },
+  {
+    key: "open_tickets",
+    label: "Service deschise",
+    icon: LifeBuoy,
+    tint: "text-orange-700 bg-orange-50 border-orange-100",
+  },
+  {
+    key: "total_customers",
+    label: "Clienți totali",
+    icon: Users,
+    tint: "text-slate-700 bg-slate-50 border-slate-100",
+  },
 ];
 
-function localYmd(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function normalizeStatus(status) {
-  return String(status || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_");
-}
-
-function isCancelled(item) {
-  const status = normalizeStatus(item?.status);
-  return status === "anulat" || status === "anulata";
-}
-
-function byDateAndTime(a, b) {
-  const aValue = `${a?.date || "9999-12-31"} ${a?.time || "23:59"}`;
-  const bValue = `${b?.date || "9999-12-31"} ${b?.time || "23:59"}`;
-  return aValue.localeCompare(bValue);
-}
 
 export default function AdminDashboard() {
   const nav = useNavigate();
+
   const [stats, setStats] = useState({});
   const [measurements, setMeasurements] = useState([]);
   const [installations, setInstallations] = useState([]);
   const [workOrders, setWorkOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
 
+  /*
+   * Dashboard-ul folosește acum un singur endpoint:
+   *
+   * GET /dashboard/summary
+   *
+   * Backend-ul returnează direct:
+   * - KPI-uri
+   * - 6 măsurători
+   * - 6 montaje
+   * - 6 lucrări
+   * - 5 notificări
+   */
   useEffect(() => {
     let active = true;
 
     const loadDashboard = async () => {
       try {
-        const [s, m, i, w, n] = await Promise.all([
-          api.get("/dashboard/stats"),
-          api.get("/measurements"),
-          api.get("/installations"),
-          api.get("/work-orders"),
-          api.get("/notifications"),
-        ]);
+        const { data } = await api.get("/dashboard/summary");
 
-        if (!active) return;
+        if (!active) {
+          return;
+        }
 
-        const allMeasurements = m.data || [];
-        const allInstallations = i.data || [];
-        const today = localYmd();
-
-        const activeMeasurements = allMeasurements
-          .filter((item) => !isCancelled(item))
-          .sort(byDateAndTime);
-
-        const activeInstallations = allInstallations
-          .filter((item) => !isCancelled(item))
-          .sort(byDateAndTime);
-
-        setStats({
-          ...(s.data || {}),
-          measurements_today: activeMeasurements.filter(
-            (item) => item.date === today
-          ).length,
-          installations_today: activeInstallations.filter(
-            (item) => item.date === today
-          ).length,
-        });
-
-        setMeasurements(activeMeasurements.slice(0, 6));
-        setInstallations(activeInstallations.slice(0, 6));
-        setWorkOrders((w.data || []).slice(0, 6));
-        setNotifications((n.data || []).slice(0, 5));
+        setStats(data?.stats || {});
+        setMeasurements(data?.measurements || []);
+        setInstallations(data?.installations || []);
+        setWorkOrders(data?.work_orders || []);
+        setNotifications(data?.notifications || []);
       } catch (error) {
-        console.error("Eroare la încărcarea dashboard-ului:", error);
+        if (!active) {
+          return;
+        }
+
+        console.error(
+          "Eroare la încărcarea dashboard-ului:",
+          error
+        );
       }
     };
 
     loadDashboard();
 
-    const onRefresh = () => loadDashboard();
-    window.addEventListener("calendar:refresh", onRefresh);
-    window.addEventListener("dashboard:refresh", onRefresh);
+    /*
+     * Păstrăm refresh-urile existente.
+     *
+     * Dacă se modifică o programare sau altă informație,
+     * Dashboard-ul poate fi reîncărcat automat.
+     */
+    const onRefresh = () => {
+      loadDashboard();
+    };
+
+    window.addEventListener(
+      "calendar:refresh",
+      onRefresh
+    );
+
+    window.addEventListener(
+      "dashboard:refresh",
+      onRefresh
+    );
 
     return () => {
       active = false;
-      window.removeEventListener("calendar:refresh", onRefresh);
-      window.removeEventListener("dashboard:refresh", onRefresh);
+
+      window.removeEventListener(
+        "calendar:refresh",
+        onRefresh
+      );
+
+      window.removeEventListener(
+        "dashboard:refresh",
+        onRefresh
+      );
     };
   }, []);
 
+
   return (
-    <div className="space-y-8 animate-fade-in" data-testid="admin-dashboard">
+    <div
+      className="space-y-8 animate-fade-in"
+      data-testid="admin-dashboard"
+    >
+      {/* HEADER */}
       <div className="flex items-end justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.28em] text-aj-navy/60 mb-1">
             Panou principal
           </div>
+
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-aj-navy">
             Vizibilitate totală.{" "}
-            <span className="text-aj-gold">Decizii rapide.</span>
+            <span className="text-aj-gold">
+              Decizii rapide.
+            </span>
           </h1>
         </div>
       </div>
 
+
+      {/* KPI */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4">
         {KPIS.map((k) => (
           <div
@@ -153,27 +216,37 @@ export default function AdminDashboard() {
             >
               <k.icon size={18} />
             </div>
+
             <div className="min-w-0">
               <div className="text-2xl font-extrabold text-aj-navy leading-none">
                 {stats[k.key] ?? 0}
               </div>
-              <div className="text-xs text-slate-500 mt-1">{k.label}</div>
+
+              <div className="text-xs text-slate-500 mt-1">
+                {k.label}
+              </div>
             </div>
           </div>
         ))}
       </div>
 
+
+      {/* MĂSURĂTORI + NOTIFICĂRI */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+        {/* Măsurători */}
         <div className="aj-card p-5 xl:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-bold text-aj-navy">
                 Măsurători apropiate
               </h3>
+
               <p className="text-xs text-slate-500">
                 Programări active, fără cele anulate
               </p>
             </div>
+
             <button
               className="text-sm text-aj-navy hover:text-aj-gold font-semibold"
               onClick={() => nav("/admin/masuratori")}
@@ -199,23 +272,33 @@ export default function AdminDashboard() {
                   <div className="font-semibold text-aj-navy truncate">
                     {m.address || "-"}
                   </div>
+
                   <div className="text-xs text-slate-500">
                     {formatDate(m.date)} · {m.time}
                   </div>
                 </div>
-                <Badge map={MEASUREMENT_STATUS} value={m.status} />
+
+                <Badge
+                  map={MEASUREMENT_STATUS}
+                  value={m.status}
+                />
               </div>
             ))}
           </div>
         </div>
 
+
+        {/* Notificări */}
         <div className="aj-card p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-bold text-aj-navy">
                 Notificări recente
               </h3>
-              <p className="text-xs text-slate-500">Activitate internă</p>
+
+              <p className="text-xs text-slate-500">
+                Activitate internă
+              </p>
             </div>
           </div>
 
@@ -227,28 +310,40 @@ export default function AdminDashboard() {
             )}
 
             {notifications.map((n) => (
-              <div key={n.id} className="py-3">
+              <div
+                key={n.id}
+                className="py-3"
+              >
                 <div className="font-semibold text-aj-navy text-sm">
                   {n.title}
                 </div>
-                <div className="text-xs text-slate-500 mt-0.5">{n.body}</div>
+
+                <div className="text-xs text-slate-500 mt-0.5">
+                  {n.body}
+                </div>
               </div>
             ))}
           </div>
         </div>
       </div>
 
+
+      {/* MONTAJE + LUCRĂRI */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+        {/* Montaje */}
         <div className="aj-card p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-bold text-aj-navy">
                 Montaje apropiate
               </h3>
+
               <p className="text-xs text-slate-500">
                 Programări active, fără cele anulate
               </p>
             </div>
+
             <button
               className="text-sm text-aj-navy hover:text-aj-gold font-semibold"
               onClick={() => nav("/admin/montaj")}
@@ -274,21 +369,29 @@ export default function AdminDashboard() {
                   <div className="font-semibold text-aj-navy truncate">
                     {i.address || "-"}
                   </div>
+
                   <div className="text-xs text-slate-500">
                     {formatDate(i.date)} · {i.time}
                   </div>
                 </div>
-                <Badge map={INSTALLATION_STATUS} value={i.status} />
+
+                <Badge
+                  map={INSTALLATION_STATUS}
+                  value={i.status}
+                />
               </div>
             ))}
           </div>
         </div>
 
+
+        {/* Lucrări */}
         <div className="aj-card p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-aj-navy">
               Lucrări în lucru
             </h3>
+
             <button
               className="text-sm text-aj-navy hover:text-aj-gold font-semibold"
               onClick={() => nav("/admin/lucrari")}
@@ -314,11 +417,19 @@ export default function AdminDashboard() {
                   <div className="font-semibold text-aj-navy truncate">
                     {w.title || "Comandă"}
                   </div>
+
                   <div className="text-xs text-slate-500">
-                    {Number(w.total_amount || 0).toLocaleString("ro-RO")} lei
+                    {Number(
+                      w.total_amount || 0
+                    ).toLocaleString("ro-RO")}{" "}
+                    lei
                   </div>
                 </div>
-                <Badge map={WORK_ORDER_STATUS} value={w.status} />
+
+                <Badge
+                  map={WORK_ORDER_STATUS}
+                  value={w.status}
+                />
               </div>
             ))}
           </div>
