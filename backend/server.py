@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+import time
 import os
 import logging
 import random
@@ -122,17 +123,103 @@ class WhatsAppTestRequest(BaseModel):
 
 @api.post("/auth/login")
 async def login(body: LoginBody, response: Response):
+    total_start = time.perf_counter()
+
     email = body.email.strip().lower()
+
+    # 1. MongoDB
+    db_start = time.perf_counter()
+
     user = await db.users.find_one({"email": email})
+
+    db_ms = (time.perf_counter() - db_start) * 1000
+
     if not user:
-        raise HTTPException(status_code=401, detail="Email sau parolă incorectă")
+        logger.info(
+            "LOGIN PERF | db=%.1fms | user_not_found",
+            db_ms,
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Email sau parolă incorectă",
+        )
+
     if not user.get("active", True):
-        raise HTTPException(status_code=403, detail="Cont dezactivat")
-    if not verify_password(body.password, user.get("password_hash", "")):
-        raise HTTPException(status_code=401, detail="Email sau parolă incorectă")
-    access = create_access_token(user["id"], user["email"], user["role"])
+        raise HTTPException(
+            status_code=403,
+            detail="Cont dezactivat",
+        )
+
+    # 2. bcrypt
+    bcrypt_start = time.perf_counter()
+
+    password_ok = verify_password(
+        body.password,
+        user.get("password_hash", ""),
+    )
+
+    bcrypt_ms = (
+        time.perf_counter() - bcrypt_start
+    ) * 1000
+
+    if not password_ok:
+        total_ms = (
+            time.perf_counter() - total_start
+        ) * 1000
+
+        logger.info(
+            "LOGIN PERF | db=%.1fms | bcrypt=%.1fms | total=%.1fms | invalid_password",
+            db_ms,
+            bcrypt_ms,
+            total_ms,
+        )
+
+        raise HTTPException(
+            status_code=401,
+            detail="Email sau parolă incorectă",
+        )
+
+    # 3. JWT
+    jwt_start = time.perf_counter()
+
+    access = create_access_token(
+        user["id"],
+        user["email"],
+        user["role"],
+    )
+
     refresh = create_refresh_token(user["id"])
-    set_auth_cookies(response, access, refresh)
+
+    jwt_ms = (
+        time.perf_counter() - jwt_start
+    ) * 1000
+
+    # 4. Cookies
+    cookie_start = time.perf_counter()
+
+    set_auth_cookies(
+        response,
+        access,
+        refresh,
+    )
+
+    cookie_ms = (
+        time.perf_counter() - cookie_start
+    ) * 1000
+
+    total_ms = (
+        time.perf_counter() - total_start
+    ) * 1000
+
+    logger.info(
+        "LOGIN PERF | db=%.1fms | bcrypt=%.1fms | jwt=%.1fms | cookies=%.1fms | total=%.1fms",
+        db_ms,
+        bcrypt_ms,
+        jwt_ms,
+        cookie_ms,
+        total_ms,
+    )
+
     return strip_id(user)
 
 
