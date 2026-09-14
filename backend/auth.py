@@ -13,16 +13,21 @@ def get_jwt_secret() -> str:
 
 
 def hash_password(password: str) -> str:
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+    salt = bcrypt.gensalt(rounds=11)
+    return bcrypt.hashpw(
+        password.encode("utf-8"),
+        salt
+    ).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+        return bcrypt.checkpw(
+            plain.encode("utf-8"),
+            hashed.encode("utf-8")
+        )
     except Exception:
         return False
-
 
 def create_access_token(user_id: str, email: str, role: str) -> str:
     payload = {
