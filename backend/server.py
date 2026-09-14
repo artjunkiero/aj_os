@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+import asyncio
 import time
 import os
 import logging
@@ -153,10 +154,11 @@ async def login(body: LoginBody, response: Response):
     # 2. bcrypt
     bcrypt_start = time.perf_counter()
 
-    password_ok = verify_password(
-        body.password,
-        user.get("password_hash", ""),
-    )
+    password_ok = await asyncio.to_thread(
+    verify_password,
+    body.password,
+    user.get("password_hash", ""),
+)
 
     bcrypt_ms = (
         time.perf_counter() - bcrypt_start
