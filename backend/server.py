@@ -184,6 +184,29 @@ async def login(body: LoginBody, response: Response):
     # 3. JWT
     jwt_start = time.perf_counter()
 
+current_hash = user.get("password_hash", "")
+current_rounds = get_bcrypt_rounds(current_hash)
+
+if current_rounds > 11:
+    new_hash = await asyncio.to_thread(
+        hash_password,
+        body.password,
+    )
+
+    await db.users.update_one(
+        {"id": user["id"]},
+        {
+            "$set": {
+                "password_hash": new_hash
+            }
+        },
+    )
+
+    logger.info(
+        "LOGIN PERF | bcrypt hash upgraded from rounds=%s to rounds=11",
+        current_rounds,
+    )
+    
     access = create_access_token(
         user["id"],
         user["email"],
