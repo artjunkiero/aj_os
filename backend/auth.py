@@ -29,6 +29,13 @@ def verify_password(plain: str, hashed: str) -> bool:
     except Exception:
         return False
 
+
+def get_bcrypt_rounds(hashed: str) -> int:
+    try:
+        return int(hashed.split("$")[2])
+    except Exception:
+        return 0
+
 def create_access_token(user_id: str, email: str, role: str) -> str:
     payload = {
         "sub": user_id,
