@@ -128,7 +128,7 @@ async def login(body: LoginBody, response: Response):
 
     email = body.email.strip().lower()
 
-    # 1. MongoDB
+    # 1. Căutare utilizator în MongoDB
     db_start = time.perf_counter()
 
     user = await db.users.find_one({"email": email})
@@ -136,10 +136,6 @@ async def login(body: LoginBody, response: Response):
     db_ms = (time.perf_counter() - db_start) * 1000
 
     if not user:
-        logger.info(
-            "LOGIN PERF | db=%.1fms | user_not_found",
-            db_ms,
-        )
         raise HTTPException(
             status_code=401,
             detail="Email sau parolă incorectă",
@@ -151,14 +147,16 @@ async def login(body: LoginBody, response: Response):
             detail="Cont dezactivat",
         )
 
-    # 2. bcrypt
+    # 2. Verificare parolă bcrypt
     bcrypt_start = time.perf_counter()
 
+    current_hash = user.get("password_hash", "")
+
     password_ok = await asyncio.to_thread(
-    verify_password,
-    body.password,
-    user.get("password_hash", ""),
-)
+        verify_password,
+        body.password,
+        current_hash,
+    )
 
     bcrypt_ms = (
         time.perf_counter() - bcrypt_start
@@ -181,45 +179,47 @@ async def login(body: LoginBody, response: Response):
             detail="Email sau parolă incorectă",
         )
 
-    # 3. JWT
+    # 3. Migrare automată bcrypt la rounds=11
+    current_rounds = get_bcrypt_rounds(current_hash)
+
+    if current_rounds > 11:
+        new_hash = await asyncio.to_thread(
+            hash_password,
+            body.password,
+        )
+
+        await db.users.update_one(
+            {"id": user["id"]},
+            {
+                "$set": {
+                    "password_hash": new_hash
+                }
+            },
+        )
+
+        logger.info(
+            "LOGIN PERF | bcrypt hash upgraded from rounds=%s to rounds=11",
+            current_rounds,
+        )
+
+    # 4. Generare JWT
     jwt_start = time.perf_counter()
 
-current_hash = user.get("password_hash", "")
-current_rounds = get_bcrypt_rounds(current_hash)
-
-if current_rounds > 11:
-    new_hash = await asyncio.to_thread(
-        hash_password,
-        body.password,
-    )
-
-    await db.users.update_one(
-        {"id": user["id"]},
-        {
-            "$set": {
-                "password_hash": new_hash
-            }
-        },
-    )
-
-    logger.info(
-        "LOGIN PERF | bcrypt hash upgraded from rounds=%s to rounds=11",
-        current_rounds,
-    )
-    
     access = create_access_token(
         user["id"],
         user["email"],
         user["role"],
     )
 
-    refresh = create_refresh_token(user["id"])
+    refresh = create_refresh_token(
+        user["id"]
+    )
 
     jwt_ms = (
         time.perf_counter() - jwt_start
     ) * 1000
 
-    # 4. Cookies
+    # 5. Setare cookies
     cookie_start = time.perf_counter()
 
     set_auth_cookies(
