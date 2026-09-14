@@ -35,10 +35,18 @@ from models import (
     now_iso, new_id, ROLES,
 )
 from auth import (
-    hash_password, verify_password,
-    create_access_token, create_refresh_token, create_client_token,
-    set_auth_cookies, clear_auth_cookies, set_client_cookie,
-    get_current_user, require_roles, get_current_client,
+    hash_password,
+    verify_password,
+    get_bcrypt_rounds,
+    create_access_token,
+    create_refresh_token,
+    create_client_token,
+    set_auth_cookies,
+    clear_auth_cookies,
+    set_client_cookie,
+    get_current_user,
+    require_roles,
+    get_current_client,
 )
 from notifications import (
     send_whatsapp_message,
